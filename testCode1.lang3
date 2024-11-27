@@ -1,0 +1,329 @@
+//1:
+	// ',' and ';' consumes up to function, 'short;', ',' does not consume past ':' '=' or functions '\ ...' and '[]'
+	//idea use '[...]' as wrapped function and '\...' as unwrapped function
+	//use '@' for named arguments and public properties (with public keys) (public up to the parent module)
+	//(...) returns the last item,
+	//{...} object, takes inner variables '{a:2}' as properties local to the module
+	//[...] can be used for structs
+	//[ #_shortExp_:exp ] ==> [ #parameters:type ]
+	//#:exp ==> unnamed parameter of type
+	//$$ unnamed static symbol, e.g. (1:int,2:int) == (int,int)
+	//[:a b] = (1,2) ==> destructuring
+	//[: exp_return_struct other] ==> struct syntax, using 'exp' as the return values
+	//[exps] exp ==> function
+	a:mod @(
+		foo:\(#a.push;#b a)
+		array:{1 2 3}
+		foo;array,2
+	)
+	a;a.foo;(1,2),3 == {1 2 3}
+	add:[#a+#b]#0
+	b:($a.foo:\#a)
+
+	\(#+#,\#-#)
+	vec2:[:#$$#int#int]
+
+	object:struct;
+//2:
+	//use '`' for no function called with no argument
+	//foo{} calls a function
+	//use .. to insert multiple arguments
+	//comparisons can be chained e.g. 'a>b>c' ==> 'a>b && b>c'
+	//{ ... } ==> object & array
+	normalDistribution : mod {
+		value:$int=\(#:int).iterate;\(#:int)+random{}>0.5
+		getList:iter{1000 value{}}
+	}
+	assert {1 2},{3 4} != {1 2 3 4}
+	assert {1 2} == (1,2)
+	assert {a:2} == (a:2)
+	assert {a:2} != (a:2 a) == 2
+//3:
+	//fizz buzz
+	100.iterate[
+		#i:Int += 1;
+		value:String = "";
+		if i % 3 == 0 value += "fizz";
+		if i % 5 == 0 value += "buzz";
+		print<|value;
+	];
+	T:=[#a:Int,#b:3*Char];
+	t:={a:Int=2,b:3*Char="abc"};//_*T for array
+	t:={a=2,b="abc"};
+	LinkedList := [$$,#last:LinkedList[$#T],#:$T];
+	linkedList : LinkedList = LinkedList<|LinkedList<|;
+	a:T=b//declare local value 'a' with type 'T' 
+	#a:=b//declare parameter
+	$A//marks (declaration or reference) as symbol called '$A' of type 'A'
+	@shortExp//marks symbols public
+	@a:=b//
+	# $   _ //declare public? : arg local
+	@//public
+	\ //function call
+	¬ £ ,
+	=> =< <=>
+	-> -< <-> <->
+	>>= =<<
+	<| |> <: :>
+//4:
+	//'\' denotes a function
+	//function: '\exp' with '#a' parameters, '##' or '(#)' for unnamed parameters ; also '\:type=exp' for a return type ; '\(args):type=exp' for full function signiture
+	//struct: '{exps}' have special patterns: '{lbl=exp}' == '{lbl:=exp}' ; hoisting 'lbl=' or 'lbl:=' e.g. '{a=;b=} == {a:=a;b:=b}' ; 'lbl:' in '{a:;b:;}' adds a property but doesn't assign it a value. can be used to add Unit type symbols '{$:;1;2}'
+	//array: '[exps]' ; is a dynamic array
+	//block: '(exps)' return ; returns last item ; '(:type=exps)' or '(=exps)' returns the first item, which is evaluated last
+	//'mod exp' 'lbl:exp=exp' 'lbl=exp,'
+	//'lbl::exp=exp' for declaring types 'T::traitsOrMetaType=type' ; uses type syntax for the 'type' part.
+	//'a(b(c(x)))' == 'a<|b<|c<|x' ; ',' == '<|'
+	//'f(a)(b)(c)' == 'f,a,b,c' == '((f(a))(b))(c)'
+	//'c(b(a(x)))' == 'a,x|>b|>c'
+	//'foo(a)<:b' == 'foo,a<:b' == 'foo(a;b)'
+	//'<:' and ':>' work similar to how they do in 0xmin ; 'short_exp<:short_exp' ; consume the same way as '<|' and '|>' respectively
+	//'foo(exps)' 'obj[exps]' 'foo{exps}' ; 'foo{exps}' is useful to construct structs with named properties
+		//note: 'foo{...}' == 'foo({...})'
+	//';' consumes up to the top i.e. nearest bracket
+	//',' consumes up to nearest short_exp since it's used for function calls
+	//end expression: ';' in 'exp;'
+	//function call: ',' in 'short_exp,short_exp' e.g. 'foo,bar' == 'foo(bar)'
+	//key using: '.' in 'short_exp.short_exp' e.g. 'obj.a'
+	//'$lbl' for external symbol ; '#lbl' for parameter
+	//about modules (i.e. 'mod'): only '@' labels are public. the call actions 'f()' 'f{}' are always public
+	//'short_exp(a;b;c)' can use array-like syntax in '( )' blocks when used in function calls, can still use `foo,(a:=2;a)` to return the last value
+	//'( exps ) : type_exp' for typing expressions
+	//'{ args_exps } = exp' , '[ args_exps ] = exp' destructureing 
+	//'short_exp..short_exp' and 'short_exp..=short_exp' range syntax, same as in Rust.
+	//'...' is similar to 'todo!()' in rust marks unfinished or dummy code; '...' is a full 'exp', allowing for e.g. 'foo<|\...<|3' --> 'foo((\(...))(3))' .
+		a:={...};
+		a.c;//error: a is not implemented
+		foo:=\...
+	// '*' in '* : type = value' injects properties & arrays into the parent block
+		// '* @ : type = value' injects all public properties into the parent block
+		// '* $ : type = value' injects all properties (both public and non-public) into the parent block
+		//note that '*$' and '*@' can work within the same module
+			(
+				*$ := {a:=2}
+				print(a)
+			)
+	//'@ short_exp' in '@ obj' makes all symbols in 'obj' public (recursively), to the parent module.
+		//e.g.
+		obj:=mod@({a=2}); //a is public
+		obj[0].a;
+	//symbols:
+		//
+		//without '@'s,  '$short_exp' is needed to access private fields; symbols are like types, and are worked out at compile time
+		(
+			*@ := {
+				privateKey ::= $$ Int;// there cannot be a space between the 2 '$'s in '$$'
+				@ obj := mod{$privateKey=2};
+				@ reader := \#obj.$privateKey;
+			};
+			innerA := reader();
+		);
+		(
+			obj:;
+			reader:;
+			(
+				privateKey ::= $$ Int;// there cannot be a space between the 2 '$'s in '$$'
+				obj = mod{$privateKey=2; a=2;@printA=\print,a};
+				reader = \#obj.$privateKey;
+			);
+			innerA := reader();
+		);
+		(
+			uniqueObject := {$$$:;1;2;3};
+			assert uniqueObject != {1;2;3};
+			symbol ::= $$$;
+			obj := {$symbol:;1;2;3};
+			assert obj == {$symbol:;1;2;3} != {1;2;3};
+		)
+		//'$ T' returns a label from the key 'T'. it will also be of type 'T'.
+		//'$$ T' returns a unique key type. It is "static" meaning only 1 unique key can be made per 1 '$$' (or '$$$') in the source code.
+		//'$$$' == '$$any' : returns a generic key
+		//note: '$' is also used to access type syntax
+		//compound objects:
+			T := \{$$:};//unique unit type
+			U := \{$$:};
+			normal_object : {a:Char;b:Int} = {b:=2;c:="A"};
+			compound_object1 :{T;U}={T,;U,};
+			compound_object2 :{T;U}={$T:T=T();$U:U=U()};
+	//types:
+		//primitives:
+			Bool;
+			Int;Float;
+			String;
+		//misc/special:
+			Any;//generic type; 'a=$$;' == 'a=$$Any;' == 'a=Symbol(Any);'
+			Undefined;//cannot be constructed; is also used as the 'void' value for functions
+			Symbol(T);//similar to 'Key' but can be used as properties to a value
+			...;//note that '...' is still a whole exp so may need to use brackets '(...)'
+			Unit(t)
+			Type
+		//compounds:
+			Enum(Array(Type))
+			Option(T);
+			Result(T;E);
+			Array(T;L);//'[],T' ; array of type 'T' and length:L e.g. a:Array(T;2);b:Array(T;any);c:Array(T;1..=4);
+			Item(T;U);//'T.U' ; item on object 'T' of type U
+			Index(T;U);//'T[U]' ; index from object 'T' to item of type 'U' ; can also have 'Index(T)' if 'T' is a type of array where 'U' would always be the same.
+			Key(T);
+			Compound(Array(Type));//
+			Fn(Array(InputType);OutputType);//function; note that functions are also types
+		//e.g.
+		listOfTypes := [_::Int;_::Char;_::{Int;Char}]//{$Int} or {Int}? for {}
+	//control flow:
+		//note on preceedence: these keyword-based expressions (e.g. 'for' , 'match' ) consume more that other 'exp' patterns, only ';' has higher priority.
+		//variables
+			#@ ; #@lbl ;
+			for 0..10 => print,#@//can use '#@' and '#@lbl' to name parameters to expressions like e.g. 'for' and 'match'.
+		//use
+		return exp;
+		break exp;
+		//for
+			//for loops returns last value
+			for exp => exp; /*or*/ for exp in exp => exp;
+			for iterable_exp => body_exp;
+			for parameters_exp in iterable_exp => body_exp;
+			//e.g.
+				for {v;i} in [2;4;6] => v+i;
+				print,for [2;4;6] => #@v+#@i;//prints "8" ; Int(6)+Index(2) = 8
+			//experimental syntax:
+				for,start_special_exp,while_exp,next_exp => body_exp;
+				for condition_exp => exp
+				//'in'
+					//'in iter_exp' adds iterator 'iter_exp' as an argument to the for-loop. It's elements can be referenced using '#@label' or 'label in iter_exp' syntax
+					//'in' expressions are evaluated at the start of a for loop, they return a Some
+				//e.g.
+					//this loop is bounded to the min of all the iterators
+					for(s:=0;in "ABC";in "123";in 0..100)=>(=s;s += #@ + #@);//"A1B2C3"
+		//if
+			if exp exp else exp;
+			if condision_exp then_exp else exp;
+		//ternary operator
+			condision_exp ? then_exp ?: otherwise_epxp
+		//match
+			match short_exp => exp;
+			//e.g.
+			match Option.Some(3) => (
+				.Some=>print(#@);
+				.None=>print("none");
+			)
+		//example
+			mod(
+				print("squares");
+				//for list value=>exp
+				for [2;4;6] \(//takes in 2 expressions
+					print(v**2);
+					if v == 25 break;
+				);
+			)//note: unsure how 'for' loops should work
+	//iterators
+		iter exp//returns an iterator
+		yeild exp//breaks from a 'iter' block returning an Iter(Some<exp>,Done<exp>)
+		yeild * exp//same as 'yeild exp' but yeilds for every value in the 'exp' iterator
+		//yeild* looks at `bar.$iter` or `bar.$\iter()` to find which one to yeild
+		iter yeild* [2;4;6]//returns a iterator
+	//async
+		async exp //returns a promise
+		//async is similar to iter but it continues when 'resolve' functions are called.
+			//similar to javacsript async uses 'Promise'-like objects with
+			//async also allows for runs asyncronously.
+			//unlike javascript, iterators and async do not need their own function block
+		await exp //returns promise 'exp', contines when the promise resolves returns the return value
+		//example
+			sum_5_numbers_slowly := async \#nums.reduce(0;\(await sleep(2);#s+#v));
+			sum_numbers := \(nums_a : Array(Int;5); nums_b : Array(Int;5)) : async(Int) =
+				async (await sum_5_numbers_slowly,nums_a) + (await sum_5_numbers_slowly,nums_b)
+			;
+		//TODO make async not require leaky awaits/asyncs, (leaky like rust lifetime refactoring)
+	//short type coersions
+		int_to_string:=\:String=""+(#int:Int);
+	//defer:
+		defer exp;//runs exp at the end of a block
+	//special properties
+		//note: '$T.a.b' == '($T).a.b' ; '$(T.a).b' == '$(T.a).b'
+		obj.$Array.>//reduce function "many to one"
+		obj.$Array.=//map function "many to many"
+		obj.$Int.<//repeat function ; for Int-like types only ; "one to many"
+	//assert
+		//throws an error in debug mode or at compile time if assersion fails
+		assert bool_exp;//
+		assert value_exp:type_exp;
+		assert (value_exp:type_exp);
+		assert !(value_exp:type_exp);
+		assert value_exp:type_exp=value_state_exp;
+	//'is'
+		exp is type_exp
+		exp is! type_exp
+		compairs type
+	a := 2;
+	b := 3;
+	c := \#x + #y;
+	a = c,a<:b;
+	mod {
+		\:{a:Int;b:Int;c:Int}={a=2;b=3;c=4};
+	};
+	compound_object:{$Int;$Char}={$Int=2;$Char="a";$Int+=2;};
+	assert compound_object == {$Char="a";$Int=4};
+	normal_distribution := mod (:Fn=
+		@get_distribution := \
+			#size.$Int.<,[]<:\//note: the '.$Int' isn't needed since 'size.<' is already public
+				(
+					#s[single_value,size¬.$Int] ??= 0 ¬ += 1
+				)
+		;
+		single_value := \(##:Float):Float=
+			#size.$Int.<,0<:\#sum+Float.random()
+		;
+	);
+	//23:00 ; 23:01
+	linked_list := \(it):=it.>,[]<:\[#s;#v];
+	//ones made after
+		linked_list := \#it.$Iter.>,[]<:\[#s;#v];
+		linked_list := \##.>,None<:\{#s;#v};
+	//oop
+	struct := \{$:;#a:Int;#b:Int;sum=\a+b;min=\a.min,b};
+	obj : struct = struct(2;3);//functions are types 
+	assert obj.$struct.b == 3;
+	//note: fully private keys (e.g. the '.a' key in 'mod(obj:={a=2};obj.a);') can never leak outside their module, although their values can. e.g. a getter can leak the value from a private key.
+	//TODO: consider adding Value state (Valid,Invalid)
+	//TODO: consider adding low-level memory management including borrow checking with lifetimes.
+	//TODO[DONE]: improve for loops
+
+	(
+		for(//start
+			s:=[];
+			i:=0;
+			v:= in iter 1000.<,\yeild ##;
+			in 0..100;
+		)do i+=1 =>
+		=>
+			s.push,
+		;
+		//'=>' subfunction: 'keyword special_args_exp => special_exp' ; use '#@label' and '#@' for parameters instead of '#label' and '##'
+	)
+	(
+		//leat code daily question
+		//https://leetcode.com/problems/shortest-subarray-with-or-at-least-k-ii/description/?envType=daily-question&envId=2024-11-10
+		or_sum := \##.>,<:\##|##;
+		is_specail := \or_sum,##>=##;
+		\(array;k):Int=(
+			sum := or_sum(array;k);
+			sum < k && return -1;
+			min_length := array.len;
+			(2**array.len).<\(
+				#i:I128;
+				sub_array := array.>,[]<:\(s;v;j):=(=s;(i&(1<<j)) && s.push,v);
+				min_length := min_length.min<|is_specail,sub_array<:k
+			);
+			min_length;
+		)
+	);
+//4.1:
+	{$:=T()}; //adds symbol T to object, expressions in '{ exps }' adds it's type as a key to the object;
+		//To support tuples, if the type is already a key it is a repetition and doesn't mutate the existing key. It only adds to the tuple part.
+	//$$ can be used outside of types in expressions to make an object unique to it's source code
+		UniqueType : Fn([];$$+3*Int);
+		UniqueType = \$${1;2;3};
+		struct : UniqueType = UniqueType();
+		assert struct.$UniqueType is! \{1;2;3};
+	//idea:swapping '{}' and '()'
+		//so '()' for struct, '{}' for block

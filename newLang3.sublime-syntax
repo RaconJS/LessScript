@@ -1,0 +1,164 @@
+%YAML 1.2
+---
+# See http://www.sublimetext.com/docs/syntax.html
+file_extensions:
+  - lang3
+scope: source.lang
+variables:
+  number: '(?x)
+    \b(?:-)?
+    (?:
+      [0-9][0-9_]*(?:\.[0-9_]+)?|
+      0x[0-9a-fA-F_]+(\.[0-9a-fA-F]+)?|
+      0b[01_]+(\.[01_]+)?
+      0o[0-7_]+(\.[0-7_]+)?
+    )(?:[FIU][0-9]*)?\b'
+  label: '\b\w+\b'
+  match_lambdaSymbol: '\\|λ'
+  string_special: '\\(?:x[0-9a-fA-F]{2}|\\u[0-9]{4}|.)'
+  match_psudoExpression: '{{number}}' #impre
+  match_keywords: '(?x)¦|│|\b(?:
+    mod|
+    if|else|
+    use|
+    for|in|
+    while|do|
+    try|catch|
+    match|
+    return|break|
+    iter|yeild|
+    await|async|
+    assert|assume|
+    is|
+    defer
+  )\b'
+  match_operator: '[+\-*%&|^~]{1,2}|/|>=|=<|[!=]=|[¬!<>?:¿]|@\s*\*|\$\s*\*|@|='
+  match_functionSignitureLookahead: \s*(?=[^\(\)+\-*/]*?\)\s*(->)?\s*.*?\{)
+  match_keywordVariable: 'this|This'
+contexts:
+  main:
+    - match: '[\)\]\}]'
+      scope: invalid.illegal.stray-bracket-end.lang
+    - include: mainContext
+  mainContext:
+    - include: base_basic
+    #keywords
+    - match: '\s*(ref)\s*\b(\w+)\b'
+      captures:
+        1: keyword.declaration.lang
+        2: variable.lang
+    - match: '\s*{{match_keywords}}'
+      scope: keyword.lang
+    - match: '\b(?x)
+        \b(?:
+          Number|String|
+          Char|
+          Float|Fixed|Uint|Int|([UFI]|Fx)(?:8|16|32|64|128)|Bool|
+          Unit|Enum|Bools|
+          Undefined|Any|
+          Tuple|Struct|
+          Array|
+          Item|Index|
+          Key|
+          Vector|Matrix|Graph|Tree|DAG|
+          Option|Result|
+          Value|
+          Fn|Type|
+          File(?:\s*\.\s*(?:Src|Text|Raw|Bin|Exe))?
+          Symbol)\b
+      '
+      scope: storage.type.lang
+    #function declaration
+    - match: '\s*{{match_lambdaSymbol}}' #lambda
+      scope: keyword.declaration.function.lang
+    
+    #function call
+    - match: '[:|]>|<[:|]'
+      scope: source.keyword.pipelineOperator.lang
+    #scopes
+    #- match: '\[:?' #functions [args]exp
+    #  scope: source.lang
+    #  push:
+    #    - - include: base_basic
+    #      #- match: '>'
+    #      - match: '(?=\S)'
+    #        pop: true
+    #    - parameters
+    - match: '[\(\[\{]'
+      scope: punctuation.section.group.begin.lang
+      push: mainContext
+    - match: '[\)\]\}]'
+      scope: punctuation.section.group.end.lang
+      pop: true
+
+    #reference and/or declare parameter
+    - match: '\#(\#|\s*{{label}}|\@(?:{{label}})?)' # '#a' '#@b' '##'
+      scope: variable.parameter
+    #operators
+    - match: '{{match_operator}}'
+      scope: keyword.operator.lang
+    #value
+    - match: '{{number}}|\b(?:true|false|null|undefined|any|NaN|Infinity)\b'
+      scope: constant.numeric.lang
+    - match: '"'
+      push:
+        - - include: base_basic_string
+          - meta_scope: string.quoted.double.lang
+          - match: '"'
+            pop: true
+      captures:
+        1: string.quoted.double.lang
+        2: constant.character.escape.lang
+        3: string.quoted.double.lang
+        4: string.quoted.double.lang
+    - match: 'r(#*)"'
+      scope: string.quoted.double.lang
+      push: multi_line_string
+    #function calls
+    - match: '{{label}}\s*(?=[\(\[\{]|<\||,)|(?<=\|>)\s*{{label}}'
+      scope: variable.function
+    #variables
+    - match: '{{label}}'
+      scope: variable.lang
+    #symbols
+    - match: '\${3}'
+      scope: storage.type.lang
+    - match: '\${2}'
+      scope: storage.type.lang
+    - match: '\$'
+      scope: source.key.lang
+  parameters:
+    - include: base_comments
+    - match: '[\w_]+'
+      scope: variable.parameter
+    - match: '(?:[\(\[\{])'
+      scope: source.lang
+      push: parameters
+    - match: (?:[\)\]\}])
+      pop: true
+  parameter:
+    - include: base_comments
+    - match: '[\[\(]'
+      set: parameter
+    - match: (?=\S)
+      pop: true
+  base_basic:
+    - include: base_comments
+  base_comments:
+    - match: '//.*\n?'
+      scope: comment.line.lang
+    - match: '/\*'
+      scope: punctuation.definition.comment.lang
+      push:
+        -
+          - meta_scope: comment.line.lang
+          - match: '\*/'
+            pop: true
+  base_basic_string:
+    - meta_scope: string.quoted.double.lang
+    - match: '{{string_special}}'
+      scope: constant.character.escape.lang
+  multi_line_string:
+    - meta_scope: string.quoted.double.lang
+    - match: '"\1'
+      pop: true

@@ -1,0 +1,489 @@
+//patterns:
+	//short_exp
+		//block
+			{exps}
+			{=exp;exps} ; {:type_exp=exp;exps}//the last exp is exicuted last; note: if it contains any '#lbl's then they will still will address the first parameters
+			{:type_exp;exps}//types a block. the last expression in the block must be of type 'type_exp'.
+		//array
+			[exps]
+		//struct
+			(exps)
+			//special_struct_inner_patterns:
+				key = value //as syntax-sugar, ':' is not needed for declarations '=' declares instead
+			//value_exp: expressions add to the tuple part.
+			//declaration_exp: declaration and assignment expressions add fields to the struct part.
+			//properties can only be added to local objects, obeying module encapsulation/scoping rules.
+		key
+		short_exp.key//similar to javascript 'a.b = c' mutates 'a'
+		short_exp[exp]//returns item using index
+		short_exp{args_list}//function call: list of args
+		short_exp(args_list_and_struct)//function call: allows for both named and indexed arguments
+		//primitive literals
+			"string"
+			r#"
+				multi
+				line string
+			"#//same as "multi\nline string";
+			r###""###;//need equal amounts of '###'s
+			123//number literal
+			123_456_789//can space out digits with '_'
+			0xDEAF//hexidecinal
+			0b10100//binary
+			0o24//octal
+			2.3//float
+			0x2.4F64//rust-like number typing
+			true false//boolean literal
+		//types
+			//primitives
+				Number Float Fixed Int
+				I8 I16 I32 I64 I128
+				U8 U16 U32 U64 U128
+				F8 F16 F32 F64 F128
+				Fx8 Fx16 Fx32 Fx64 Fx128//Fixed
+				String Char
+				B8 B16 B32 B64 B128//BoolSet
+				E8 E16 E32 E64 E128//Enum
+			//objects
+				Array{T;L} ; [...] ; L*T ; *T //array of T's of length 'L'
+				Vector ; V*T //where: V:Vector, T:Type
+				Struct(...) ; (...) //list of key type pairs + tuple items
+				Fn{T;[...]} ; Fn->T ; Fn[...]->T ; \T ; \(...):=T //function that takes in parameters 'P' and returns a 'T' ; P is must be a bracket literal
+				Enum(...) ; ^(...) ;  //if proceeded by a 'short_short_exp' then it matches to the "enum case" pattern '^short_short_exp.key' ; note: this syntax is a companise since we would prefer `case operator enum` syntax.
+				BoolSet(...) ; |(...)//array of booleans ; can me matched against like an enum but multiple cases will run instead of just 1, similar to Enum
+				//e.g.
+					Compound_type1_multi_inheritence ::= $$($*:Int;$*:String);
+					Compound_type2_traits ::= $$($Int:;$String:);
+					Compound_type3_tuple ::= $$(Int;String);
+					Compound_type4_JSON_object ::= $$(int:Int;string:String);
+					Colours ::Enum= ^(
+						Red;//same as ';'
+						Green;
+						Blue:$$;//makes blue a unique unit type ; enum varients can have types just like rust
+						Grey:^(Light;_;Dark);
+						Black = 8;//can assign values as well as types to enums
+					);
+					Settings :: BoolSet = |(//can be used as an array of Option types
+						A;
+						B;
+						C;
+						D:Float;
+					);
+					enumCaseObject :Enum= ^().;
+			//
+
+				Index{T;A}  //A[T] ; index to a 'T' on object of type 'A'
+				Item{T;O}  //
+			//
+				Any
+				Undefined
+				Unit
+			//meta types
+				Type{T}
+				Symbol{T}  $$//key to a type T
+			//Type cannot be overwriten, all the basic types are properties of 'Type'
+	//type properties:
+		//special properties
+			//note: '$T.a.b' == '{$T}.a.b' ; '${T.a}.b' == '${T.a}.b'
+			obj.$Array.>//reduce function "many to one"
+			obj.$Array.=//map function "many to many"
+			obj.$Int.<//repeat function ; for Int-like types only ; "one to many"
+	//args:
+		argument_exp
+		args;argument_exp
+		//argument_exp:
+			key
+	//exp
+		short_exp
+		//alternate block expression typing ; TODO: decide wheather to keep this syntax
+			{ ... }:short_type_exp,//for asserting types for parts of expressions
+				//e.g.
+				print{"1 + 2 = " + {:Float; 1 + 2}:Float¬.$String}:{};
+		//function
+			\exp
+			//typing
+				\function_params:type=exp
+				\function_params:=exp
+				\:type=exp
+				//function_params:
+					{params}
+					(params)
+		//enum
+			Enum (
+				String;
+			);
+			^(exps)//enum
+			^(exps).key//case
+			Enum
+		//modules 'mod'
+			mod exp
+			//the types inside a module can be infered.
+			//types must be defined by the end of statically parsing a module.
+			//variables within a module are considered "local"
+			//keys cannot be added to external objects, only internal ones.
+			//the global scope is considered a module
+		//references 'ref'
+			ref exp
+			//can use '#@' to reference the refed object
+			cyclic_object := ref(#@);
+		//operators
+			exp+exp//can use any infix operator
+			!short_exp//prefix operator
+			exp > exp < exp //chainable comparison operators
+			//operators
+				//infix
+					+ - * / ** %% % //float note: 'a%%b' is for log i.e. {log_b{a}} == 'log{a}/log{b}'
+					& | ~ ^ << >> >>>//bitewise
+					&& || ^^ ~~
+					== != >= <= //note: these operators can be chained for '4 > x >= 2' expressions
+				//prefix operators
+					! ++ -- + -
+			key += exp
+			key :+= exp
+			key : type += exp
+			//type casting '>:'
+				exp >: short_short_type_exp
+				//'a >: T' is equivelant to 'a.into::<T>()' from Rust, where as 'a.$T' is more like 'a as T' from Rust
+				//In general 'a.$T' should be used for converting types, 
+				//e.g.
+				a := 45:<Int;
+					ascii_code :U8= {:Char;"a"}U8;
+			//specall assign with operator operators '>>='
+				key >>= foo_exp//same as 'key = foo_exp{key}'
+		//'¬'
+			exp ¬ exp
+			exp ¬ .short_exp
+			//consumes all of the exp on the left
+			//same as in 0xmin
+			assert {\##+##¬{2;3}*2} == {{\##+##}{2;3}*2};
+		//ternary operator
+			condition_exp ?& then_exp ?| otherwise_exp //"and then" "or else"
+			then_exp &? condition_exp ?| otherwise_exp
+		//"todo" macro
+			...
+		//declaration/assignment
+			//general_declaration_or_assignment
+				short_exp:type_exp//general declaration
+				short_exp=exp//assignment
+				short_exp:=exp//declaration and assignment
+				short_exp:type_exp=exp//declaration and assignment with type 'type_exp'
+			key:type=exp
+			key::SuperType_exp=type
+			//auto_declare symbol ; '$:=' ''
+				$:type
+				$:=exp
+				$:type=exp
+				$=exp//auto_assignment
+			//hoisting
+				key:=*
+			a.b=c//assigns property similar to Javascript {mutating referenced object 'a'} ; if key 'b' is not on 'a's type and 'a's struct is local, then it is added to the struct and object.
+				//auto adding properties cannot be done, if the object's type is well defined, or if the object's type is private to this scope.
+			a.b:=c//
+			destructure=exp
+			destructure:=exp
+			destructure:type=exp
+			//destructure:
+				(params)
+				[params]
+				//note: can be recursive, e.g. [a;[b;(c;d)]] = [1;[2;(c=3;d=4)]];
+			//declaring types
+				T::=U;
+				key::type_exp=type_exp;
+				T::meta_type=type;
+				//e.g.
+					T::Type=2*Int;
+		//type_exp:
+			type_short_exp
+			type_exp * type_exp // array 'size * type' == Array{$Int:size;$Type::type}
+			type_exp + type_exp //compound objects ; similar to combining traits in Rust.
+			$$ type_short_exp
+			//type_short_exp:
+				{type_exps}//block
+				(type_exps)//struct
+				[type_exps]//array
+				\normal_exp//enters normal typeing ; this is done since types are functions
+		//params_exp
+			//parameter_exp
+				key
+				key:type
+				key=default
+				key:=default
+				key:type=default
+			//parameters_exps:
+				parameter_exp
+				parameters_exps;parameter_exp
+			parameter_exp
+			{parameters_exps}
+		//keyword expressions:
+			//general
+				keyword body_exp
+				keyword > exp = body_exp
+				keyword > = body_exp
+				keyword >= body_exp//can use '>=', less than or equal to symbol, the same way as '> =' pattern
+				keyword exp => body_exp
+				//can also use '=>' instead of '>='
+				#@//can use '#@' keyword's parameter declarations
+			//if expression
+				if condition_exp => then_exp else otherwise_exp
+				//condition_exp:
+					//normal exp with special pattern for Rusts 'if let'-like expression
+					key:type=obj
+					:type=obj //inner value can then be reverenced with '#@name'
+					//can do 'if let T{inner} = obj (inner)'
+						@*=Option
+						if (inner):Option.Some= obj => print,inner else inner
+			//
+				//can use '#@key' in these expressions
+				//keywords:
+					for do in
+					match
+					while
+				while exp => exp
+				for exp do exp => exp
+					for => exp
+					in iterable_exp
+					do exp
+				match exp => exp
+				//e.g.
+					for in [1;2;3] => print #@v; 
+					match Option.Some{3} => (
+						Option.Some:=print{#@};
+						Option.None:=print{"none"};
+					)
+					//note can use syntax-sugar '.key' instead of 'EnumType.key' in match statements and when a type can be infered
+					match Option.Some{3} => (
+						.Some=print{#@};
+						.None=print{"none"};
+					)
+			//
+				iter yeild//used for iterators, similar to Javascript
+				async await//async
+				!< !>
+				!> //can be used as 'yeild' or 'await' depending on smallest context ; '!> exp' returns the first argument to the "resolve" function
+				!< //'!< exp' ; same as 'async' ; a '!>' (aka 'await') breaks out of the nearest '!<' block
+			//
+				if else
+
+			//
+				defer
+			//assertions
+				assert assert_condision_exp;
+				//assert_condision_exp
+					exp
+					exp is type_exp//returns true the type of 'exp' equals 'type_exp'
+					exp is//returns true if all property parts of 'exp' involve existing keys; can be used for checking keys on objects
+				//e.g.
+					assert exp is type_exp;
+					assert exp == exp;
+					assert exp.$type_exp is;
+				exp is exp;
+				//exp's in assert expressions can use 'is' keyword to compair types
+				assume exp => exp;
+			//importing files
+				import short_exp:type_exp;
+				use.short_exp//imports module
+				//note: importing the same file twice will NOT create 2 separate sets of keys.
+				//TODO: work out how running modules would work as well
+				//uses rust-like file including
+				//main_folder
+					//main_folder/module1
+					//main_folder/module2
+					//main_folder/module3
+				main_folder := mod (
+					module1 := mod (...);
+					module2 := mod (...);
+					module3 := mod (...);
+				);
+				//e.g.
+					//main_file
+						use mod.folder1.module_2 as 
+
+					//folder1
+						//module 2
+
+	//exps
+		exp
+		exps;exp
+	//key
+		name //any word 'abc' 'foo' 'bar' etc...
+		$name
+		$short_short_type_exp //a.$B.c == (a.$B).c != a.$(B.c)
+		//declare function parameter
+			#name
+			##
+			//for declaring and using parameters while in a function
+		//declare statement parameter e.g. in 'for' blocks
+			#@name
+			#@ //followed by no name
+		//situational
+			@*//gets all public keys of 'obj'; excludes private keys ; also injects array elements
+			!@*//gets all the non-public key of 'obj';
+			$*//gets all keys of ; includes both public and private keys ; also injects array elements
+			//e.g.
+				$*:=(a=2;b=3);
+				assert a == 2;
+				!@*
+			..//range syntax
+				short_exp .. short_exp
+				short_exp ..= short_exp
+			$//auto key, gets the appropreate key depending on the type required ; '$ = 2' --> '$Int = 2' 
+				//e.g. 'foo:=\{:String}:=#str+str;' 'foo,$' --> 'foo,$String'
+	//unique symbols '$$' ; unique types
+		//key
+			$$
+		$$short_exp//turns 'short_exp' into a class-instance-like object
+		//e.g.
+			{
+				obj:=(1;2;3);
+				UniqueObj := \$$obj;
+				unique_obj := UniqueObj{};
+				assert unique_obj is UniqueObj;
+				assert unique_obj.$UniqueObj == unique_obj;
+				$$obj
+			}
+			//
+
+			//is the same as
+				($$:;1;2;3);
+	//typeof
+		assert short_exp.$Type
+	//TODO
+		error handling
+//examples:
+	{//example
+		mod{
+			Coords := \($$:;#x:=0;#y:=0);
+			player := (
+				$ = Coords{0;0};
+				health:Int=10;
+			);
+		}
+		/*
+			//Rust
+			struct Coords{x:Int;y:Int};
+			struct Player {
+				coords:Coords,
+				health:Int,
+			}
+			let player = Player{
+				coords:Coords(0,0),
+				health:10,
+			};
+		*/
+		/*
+			//Javascript
+			let player = {
+				coords:Coords(0,0),
+				health:10,
+			};
+		*/
+	};
+	//btw the reason '{}' is used for blocks instead of '()' is that Sublime-text always treats '{}' as blocks and doesn't like using '()' as blocks.
+	{
+		DiGraph := \{#T;Self:=\($DiGraph=this;$:=#nodes:{*Self};T)};
+		assert DiGraph == \($DiGraph:;$\:)
+		DiGraph.a := $$();
+		assert DiGraph is \DiGraph(#T);
+		//note: an object's type is always a key of the object e.g. '(2;"a").$(Int;String)'
+		//note: 'a:T=b' only declares to a block if it's not inside another expression
+	};
+	{//callbacks
+		foo1:=\#callBack{};
+		foo2:=\#callBack{};
+		foo3:=\#callBack{};
+		foo4:=\#callBack{};
+		foo1{
+			\foo2{
+				\foo3{
+					\foo4,
+						\print,"done";
+				}
+			}
+		};
+		foo1,
+			\foo2,
+				\foo3,
+					\foo4,
+						\print,"done"
+		;
+		foo1,\foo2,\foo3,\foo4,\print,"done";
+		async {
+			await>=foo1,#@;
+			await>=foo2,#@;
+			await>=foo3,#@;
+			await>=foo4,#@;
+			await>=print,"done";
+		};
+		!< {
+			!>foo1,#@;
+			!>foo2,#@;
+			!>foo3,#@;
+			!>foo4,#@;
+			!>print,"done";
+		};
+		church_numeral_five := \f:=\f,f,f,f,f,#x;
+	};
+	{
+		Word := \(
+			#word:String;
+			#type:^(
+				Bracket:* *Word;
+				Label;
+				Symbol;
+				Number;
+			);
+			#debug:(
+				column:Int;
+				line:Int;
+				indent:Int;
+
+			);
+		);
+	};
+	{
+		normal_distribution := mod {
+			\##.<\##[\1000|>(\##.<,0<:\##+1F.random)]+=1;
+		};
+	};
+	{
+		sum = \($*I):I=
+			##.>{;\##+##};
+		//(a:Int[]):Int=>//JS
+		//	a.r((s,v)=>s+v);
+		//f :: [Int] -> Int//haskell
+		//f [] = 0
+		//f (x:xs) = x + sumList xs
+		//|a|a.iter().reduce(|s,v|s+v,0)//rust
+	};
+	{
+		//enum examples
+			\:^(red;green;blue;$Int;Some:T)=.Some(3)
+			\:^(red;green;blue;$Int;Some:T)=.$Int(##:Int)
+		*$
+	};
+	{
+		Queue := \(T::):=\mod$$(
+			${*T} := [];
+			@enqueue := \${*T}.push,#$T;
+			@dequeue := \${*T}.shift,;
+			@intoArray := \${*};//can use '*' instead of '*T'
+		)
+	};
+	{
+		invertBinaryTree := mod{=invert;
+			T ::= Int;
+			BinTree ::2*= ref{2*^[T;#@]};
+			invert := \(a:BinTree):BinTree=
+				[a[1];a[0]].=,\
+					match #v =>(
+						2* = invert,v;
+						= v;
+					)
+			;
+		};
+		joinedIterator := mod \(array1;array2):= !<
+			yeild*array1;
+			for(let v of array1)yeild v;
+			for=> !> in array1;//doesn't mention argument of the '!>' to yeilds the item and the '#@' as (value:;next:)
+	};
+	//note: '@key' is not recursive need `@key:=@exp` for that. only the key is made public to the parent module
+	//@() makes all iner keys public
