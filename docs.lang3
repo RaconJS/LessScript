@@ -243,8 +243,27 @@
 					in iterable_exp
 					do exp
 				match exp => exp
+				//for loops
+					//for loops:
+					in iterable_exp //takes in an iterable object and returns each value from it, per loop in a for loop
+						//a 'for' loop runs as long as at least 1 unfinished iterator in one of it's 'in' expressions
+					key in iterable_exp //syntax sugar for 'key := iterable_exp'
+					start_exp do next_exp while condition_exp => body_exp //a triditional for loop.
+						//runs 'start_exp' once. Then checks 'condision_exp' 'body_exp' with 'next_exp' at the end of each loop.
+						//has 2 parameters:
+							//'#?': for the unwrapped value from condition_exp, works same as the 'if's '#?'.
+							//'#@': for the value of the variable declared in 'start_exp', if no variable was declared then 'start_exp's value will be assigned to the '#@' value.
+						//note that unlike for loops in some other languages, the 'i++' part is written before the condision.
+							//this design choice is done since the 'next_exp' code is userally simpler than the 'condision_exp' code.
 				//e.g.
-					for in [1;2;3] => print #@v; 
+					for in [1;2;3] => print,#@v; 
+					for v := in [1;2;3] => print,v; 
+					for v in [1;2;3] => print,v; 
+					for print,in [1;2;3];//'for condision_exp => body_exp' or 'for body_exp'
+					for{v := in[1;2;3]; print,v};//
+					i := 0 do i++ while i < 10 => print,[1;2;3][i];
+					0 do #@i++ while i < 10 => print,[1;2;3][i];
+					for i := 0 in i++ while i < 10
 					match Option.Some{3} => (
 						Option.Some:=print{#@};
 						Option.None:=print{"none"};
@@ -258,13 +277,20 @@
 				iter yeild//used for iterators, similar to Javascript
 				async await//async
 				!< !>
-				!> //can be used as 'yeild' or 'await' depending on smallest context ; '!> exp' returns the first argument to the "resolve" function
+				!> //can be used as 'yeild' or 'await' depending on smallest context
+					//'!> exp' returns the first argument to the "resolve" function
+					//'!>' contains a '#@' argument for the 'next' function that, when called continues the async/iter function.
+						//if the 'next' function is called before the 'exp' in '!> exp' finishes then it will not yeild a '(value:;next:)' object and will just continue the function with the resolved result.
+						//if the 'next' function is not called an await block will return a '(value;next)' pair
+				!>* iterable_exp //same as 'yeild* exp' in javascript ; it joins the inner async/iterator ; same as 'for !> in iterable_exp'
 				!< //'!< exp' ; same as 'async' ; a '!>' (aka 'await') breaks out of the nearest '!<' block
 			//
 				if else
 
 			//
 				defer
+					//defers the running of a statement till the end of its block
+					//similar to the '(:=exp; )' pattern ; 'blocks' include statements like 'if' 'for', functions (i.e. '\'), brackets '()', etc...
 			//assertions
 				assert assert_condision_exp;
 				//assert_condision_exp
@@ -380,7 +406,7 @@
 	//btw the reason '{}' is used for blocks instead of '()' is that Sublime-text always treats '{}' as blocks and doesn't like using '()' as blocks.
 	{
 		DiGraph := \{#T;Self:=\($DiGraph=this;$:=#nodes:{*Self};T)};
-		assert DiGraph == \($DiGraph:;$\:)
+		assert DiGraph == \($DiGraph:;$\:);
 		DiGraph.a := $$();
 		assert DiGraph is \DiGraph(#T);
 		//note: an object's type is always a key of the object e.g. '(2;"a").$(Int;String)'
@@ -412,14 +438,7 @@
 			await>=foo3,#@;
 			await>=foo4,#@;
 			await>=print,"done";
-		};
-		!< {
-			!>foo1,#@;
-			!>foo2,#@;
-			!>foo3,#@;
-			!>foo4,#@;
-			!>print,"done";
-		};
+		}
 		church_numeral_five := \f:=\f,f,f,f,f,#x;
 	};
 	{
@@ -448,42 +467,14 @@
 		sum = \($*I):I=
 			##.>{;\##+##};
 		//(a:Int[]):Int=>//JS
-		//	a.r((s,v)=>s+v);
+		//	a.r((s,v)=>s+v)
 		//f :: [Int] -> Int//haskell
 		//f [] = 0
 		//f (x:xs) = x + sumList xs
-		//|a|a.iter().reduce(|s,v|s+v,0)//rust
 	};
 	{
-		//enum examples
-			\:^(red;green;blue;$Int;Some:T)=.Some(3)
-			\:^(red;green;blue;$Int;Some:T)=.$Int(##:Int)
+		//idea: [] for enums
+			\:$[red;green;blue;$Int;Some:T,]=.Some(3);
 		*$
+		//note: language does not need 'dyn' keyword. functions are typed by their return values
 	};
-	{
-		Queue := \(T::):=\mod$$(
-			${*T} := [];
-			@enqueue := \${*T}.push,#$T;
-			@dequeue := \${*T}.shift,;
-			@intoArray := \${*};//can use '*' instead of '*T'
-		)
-	};
-	{
-		invertBinaryTree := mod{=invert;
-			T ::= Int;
-			BinTree ::2*= ref{2*^[T;#@]};
-			invert := \(a:BinTree):BinTree=
-				[a[1];a[0]].=,\
-					match #v =>(
-						2* = invert,v;
-						= v;
-					)
-			;
-		};
-		joinedIterator := mod \(array1;array2):= !<
-			yeild*array1;
-			for(let v of array1)yeild v;
-			for=> !> in array1;//doesn't mention argument of the '!>' to yeilds the item and the '#@' as (value:;next:)
-	};
-	//note: '@key' is not recursive need `@key:=@exp` for that. only the key is made public to the parent module
-	//@() makes all iner keys public

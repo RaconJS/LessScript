@@ -21,7 +21,8 @@ variables:
     mod|
     if|else|
     use|
-    for|in|
+    ref|
+    for|in|of|
     while|do|
     try|catch|
     match|
@@ -43,10 +44,6 @@ contexts:
   mainContext:
     - include: base_basic
     #keywords
-    - match: '\s*(ref)\s*\b(\w+)\b'
-      captures:
-        1: keyword.declaration.lang
-        2: variable.lang
     - match: '\s*{{match_keywords}}'
       scope: keyword.lang
     - match: '\b(?x)
@@ -54,6 +51,7 @@ contexts:
           Number|String|
           Char|
           Float|Fixed|Uint|Int|([UFI]|Fx)(?:8|16|32|64|128)|Bool|
+          U|I|F|Fx|
           Unit|Enum|Bools|
           Undefined|Any|
           Tuple|Struct|
