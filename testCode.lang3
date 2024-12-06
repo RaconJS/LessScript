@@ -2,7 +2,10 @@
 //#@;
 //#?;
 //#!>;
-
+:a=b;
+\##.<,0<:a;
+health:Int=10;
+$:=nodes=a;
 fizbuz := \
 	for {
 		str := "";
@@ -32,5 +35,122 @@ odds := \!<
 
 };*/
 i := 0 do i++ while i < 10 => {
-
+	print(i)
 };
+obj := mod {
+	self := ();
+	@self.msg := \{print,"hello";self.log++;};
+	@self.printLog := \print,self.log;
+	self 
+};
+{
+	obj.msg();
+	obj.msg();
+	obj.msg();
+	obj
+};
+//array methods: m/=/map, f/filter, r/>/reduce, sl/slice, sp/splice, so/sort
+//examples:
+	{//example
+		mod{
+			Coords := \($$:;#x:=0;#y:=0);
+			player := (
+				$ = Coords{0;0};
+				health:Int=10;
+			);
+		}
+		/*
+			//Rust
+			struct Coords{x:Int;y:Int};
+			struct Player {
+				coords:Coords,
+				health:Int,
+			}
+			let player = Player{
+				coords:Coords(0,0),
+				health:10,
+			};
+		*/
+		/*
+			//Javascript
+			let player = {
+				coords:Coords(0,0),
+				health:10,
+			};
+		*/
+	};
+	//btw the reason '{}' is used for blocks instead of '()' is that Sublime-text always treats '{}' as blocks and doesn't like using '()' as blocks.
+	{
+		DiGraph := \{#T;Self:=\($DiGraph=this;$:=#nodes:{*Self};T)};
+		assert DiGraph == \($DiGraph:;$\:);
+		DiGraph.a := $$();
+		assert DiGraph is \DiGraph(#T);
+		//note: an object's type is always a key of the object e.g. '(2;"a").$(Int;String)'
+		//note: 'a:T=b' only declares to a block if it's not inside another expression
+	};
+	{//callbacks
+		foo1:=\#callBack{};
+		foo2:=\#callBack{};
+		foo3:=\#callBack{};
+		foo4:=\#callBack{};
+		foo1{
+			\foo2{
+				\foo3{
+					\foo4,
+						\print,"done";
+				}
+			}
+		};
+		foo1,
+			\foo2,
+				\foo3,
+					\foo4,
+						\print,"done"
+		;
+		foo1,\foo2,\foo3,\foo4,\print,"done";
+		async {
+			await>=foo1,#@;
+			await>=foo2,#@;
+			await>=foo3,#@;
+			await>=foo4,#@;
+			await>=print,"done";
+		};
+		church_numeral_five := \f:=\f,f,f,f,f,#x;
+	};
+	{
+		Word := \(
+			#word:String;
+			#type:^(
+				Bracket:* *Word;
+				Label;
+				Symbol;
+				Number;
+			);
+			#debug:(
+				column:Int;
+				line:Int;
+				indent:Int;
+
+			);
+		);
+	};
+	{
+		normal_distribution := mod {
+			\##.<,\##[\1000|>(\##.<,0<:\##+1F.random)]+=1;
+		};
+	};
+	{
+		sum = \($*I):I=
+			##.>{;\##+##};
+		//(a:Int[]):Int=>//JS
+		//	a.r((s,v)=>s+v)
+		//f :: [Int] -> Int//haskell
+		//f [] = 0
+		//f (x:xs) = x + sumList xs
+	};
+	{
+		//idea: [] for enums
+			\:$[red;green;blue;$Int;Some:T,]=.Some(3);
+		*$
+		//note: language does not need 'dyn' keyword. functions are typed by their return values
+	};

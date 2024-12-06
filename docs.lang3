@@ -33,7 +33,7 @@
 			2.3//float
 			0x2.4F64//rust-like number typing
 			true false//boolean literal
-		//types
+		//types ; the type system
 			//primitives
 				Number Float Fixed Int
 				I8 I16 I32 I64 I128
@@ -156,6 +156,7 @@
 			//same as in 0xmin
 			assert {\##+##¬{2;3}*2} == {{\##+##}{2;3}*2};
 		//ternary operator
+			//functions the same as a for loop
 			condition_exp ?& then_exp ?| otherwise_exp //"and then" "or else"
 			then_exp &? condition_exp ?| otherwise_exp
 		//"todo" macro
@@ -231,6 +232,7 @@
 					//can do 'if let T{inner} = obj (inner)'
 						@*=Option
 						if (inner):Option.Some= obj => print,inner else inner
+				//ternary 
 			//
 				//can use '#@key' in these expressions
 				//keywords:
@@ -293,6 +295,7 @@
 					//similar to the '(:=exp; )' pattern ; 'blocks' include statements like 'if' 'for', functions (i.e. '\'), brackets '()', etc...
 			//assertions
 				assert assert_condision_exp;
+				assert assert_condision_exp => exp;
 				//assert_condision_exp
 					exp
 					exp is type_exp//returns true the type of 'exp' equals 'type_exp'
@@ -304,6 +307,13 @@
 				exp is exp;
 				//exp's in assert expressions can use 'is' keyword to compair types
 				assume exp => exp;
+			//error handling
+				try exp
+					//returns an Result that can be detected with 'if else' or '?&' statements
+				try exp else catch_exp
+				try exp => finally_exp else catch_exp
+				try exp ?& finally_exp ?| catch_exp
+				try exp ?| catch_exp
 			//importing files
 				import short_exp:type_exp;
 				use.short_exp//imports module
