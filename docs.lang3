@@ -2,7 +2,7 @@
 	//short_exp
 		//block
 			{exps}
-			{=exp;exps} ; {:type_exp=exp;exps}//the last exp is exicuted last; note: if it contains any '#lbl's then they will still will address the first parameters
+			{=exp;exps} ; {:type_exp=exp;exps}//the first exp is exicuted last; note: if it contains any '#lbl's then they will still will address the first parameters
 			{:type_exp;exps}//types a block. the last expression in the block must be of type 'type_exp'.
 		//array
 			[exps]
@@ -35,14 +35,16 @@
 			true false//boolean literal
 		//types ; the type system
 			//primitives
-				Number Float Fixed Int
-				I8 I16 I32 I64 I128
-				U8 U16 U32 U64 U128
-				F8 F16 F32 F64 F128
-				Fx8 Fx16 Fx32 Fx64 Fx128//Fixed
-				String Char
-				B8 B16 B32 B64 B128//BoolSet
-				E8 E16 E32 E64 E128//Enum
+				N Number Float Fixed Int
+
+				I I8 I16 I32 I64 I128
+				U U8 U16 U32 U64 U128
+				F F8 F16 F32 F64 F128
+				Fx Fx8 Fx16 Fx32 Fx64 Fx128//Fixed
+				S String
+				C Char
+				B B8 B16 B32 B64 B128//BoolSet
+				E E8 E16 E32 E64 E128//Enum
 			//objects
 				Array{T;L} ; [...] ; L*T ; *T //array of T's of length 'L'
 				Vector ; V*T //where: V:Vector, T:Type
@@ -107,6 +109,16 @@
 				//function_params:
 					{params}
 					(params)
+			//public parameters
+				//can put '@' behind a parameter key to allow for named arguments
+				//e.g.
+					\(a;b)=a+b;
+					\(a:Int;b:Int):Int=a+b;
+					foo:=\(@a;@b)=a+b;
+					foo(a=2;b=3);
+					bar:=\[@#a;##];
+					assert bar(a:=2;3) == [3;2];
+				//public arguments can only be accessed
 		//enum
 			Enum (
 				String;
@@ -121,6 +133,24 @@
 			//variables within a module are considered "local"
 			//keys cannot be added to external objects, only internal ones.
 			//the global scope is considered a module
+		//public '@'
+			//makes the 'short_short_exp' accessable to the parent 'mod' module
+			@short_short_exp
+			//e.g.
+				@key : type = exp ;
+				//
+				@( ... ) ;//public object ; '@' makes all keys inside brackets recursively public
+				@[ ... ] ;//
+				@{ ... } ;//public object
+				@\ ... ;//public function ; the type of this function is public
+			//e.g.
+				obj := mod{
+					newObject := (
+						@publicProperty := \print,"accessable by parent module";
+						privateProperty := \print,"accessable only inside this module";
+					)//does not end in ';' so 'obj' is returned by the '{}' block
+				};
+				obj.privateProperty,;
 		//references 'ref'
 			ref exp
 			//can use '#@' to reference the refed object
@@ -228,10 +258,16 @@
 				//condition_exp:
 					//normal exp with special pattern for Rusts 'if let'-like expression
 					key:type=obj
-					:type=obj //inner value can then be reverenced with '#@name'
+					:type=obj //inner value can then be reverenced with '#?name'
 					//can do 'if let T{inner} = obj (inner)'
-						@*=Option
-						if (inner):Option.Some= obj => print,inner else inner
+						obj := Option.Some(2);
+						if (inner) : Option.Some = obj => print,inner else inner;
+						if (inner) : .Some = obj =>
+							print,inner
+						else inner;
+						@* = Option;
+						if obj : Some => print,#?inner else assert #?inner is Option.None;
+						if null != null => print,"some value:\""+#?+"\"";
 				//ternary 
 			//
 				//can use '#@key' in these expressions
@@ -253,8 +289,8 @@
 					start_exp do next_exp while condition_exp => body_exp //a triditional for loop.
 						//runs 'start_exp' once. Then checks 'condision_exp' 'body_exp' with 'next_exp' at the end of each loop.
 						//has 2 parameters:
-							//'#?': for the unwrapped value from condition_exp, works same as the 'if's '#?'.
-							//'#@': for the value of the variable declared in 'start_exp', if no variable was declared then 'start_exp's value will be assigned to the '#@' value.
+							//'#?key': for the unwrapped value from condition_exp, works same as the 'if's '#?'.
+							//'#@key': for the value of the variable declared in 'start_exp', if no variable was declared then 'start_exp's value will be assigned to the '#@' value.
 						//note that unlike for loops in some other languages, the 'i++' part is written before the condision.
 							//this design choice is done since the 'next_exp' code is userally simpler than the 'condision_exp' code.
 				//e.g.
@@ -335,7 +371,7 @@
 
 					//folder1
 						//module 2
-
+			//
 	//exps
 		exp
 		exps;exp
@@ -350,6 +386,9 @@
 		//declare statement parameter e.g. in 'for' blocks
 			#@name
 			#@ //followed by no name
+		//condision case
+			#?name
+			#?
 		//situational
 			@*//gets all public keys of 'obj'; excludes private keys ; also injects array elements
 			!@*//gets all the non-public key of 'obj';
@@ -384,6 +423,14 @@
 		assert short_exp.$Type
 	//TODO
 		error handling
+//misc syntax:
+	//destructuring
+		obj:=(a=1;b=(2;3);c=3;4;5;6);
+		(a:x;b:y;c:3)=obj;
+		(a=x;b=(y;z);c=w)=obj;
+		(a=b=foo)=obj;
+		four:;five:;six:;
+		[four;five;six] = obj;
 //examples:
 	{//example
 		mod{

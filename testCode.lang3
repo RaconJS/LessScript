@@ -2,16 +2,20 @@
 //#@;
 //#?;
 //#!>;
-:a=b;
-\##.<,0<:a;
-health:Int=10;
-$:=nodes=a;
+{
+	a:=2;
+	a+=2;
+	:a=b;
+	\##.<,0<:a;
+	health:Int=10;
+	$:=nodes=a;
+};
 fizbuz := \
 	for {
 		str := "";
-		str += "fiz" &? i in 1..=100 % 3 == 0;
-		str += "buz" &? i % 5 == 0;
-		str += "baz" &? i % 7 == 0;
+		(str += "fiz") &? i in 1..=100 % 3 == 0;
+		(str += "buz") &? i % 5 == 0;
+		(str += "baz") &? i % 7 == 0;
 		print,str;
 	}
 ;

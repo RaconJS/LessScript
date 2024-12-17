@@ -48,10 +48,11 @@ contexts:
       scope: keyword.lang
     - match: '\b(?x)
         \b(?:
-          Number|String|
+          Number|
+          String|
           Char|
-          Float|Fixed|Uint|Int|([UFI]|Fx)(?:8|16|32|64|128)|Bool|
-          U|I|F|Fx|
+          Float|Fixed|Uint|Int|([UFI]|Fx|B|E)(?:8|16|32|64|128)|Bool|
+          U|I|F|Fx|N|S|C|E|B|
           Unit|Enum|Bools|
           Undefined|Any|
           Tuple|Struct|
@@ -90,7 +91,7 @@ contexts:
       pop: true
 
     #reference and/or declare parameter
-    - match: '\#(\#|\s*{{label}}|\@(?:{{label}})?)' # '#a' '#@b' '##'
+    - match: '\#(\#|\s*{{label}}|[@?](?:{{label}})?)' # '#a' '#@b' '##'
       scope: variable.parameter
     #operators
     - match: '{{match_operator}}'

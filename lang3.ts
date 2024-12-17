@@ -1,3 +1,4 @@
+//name suggetion: quad, (the Quick Unreadable And Dirty programming language)
 //TODO: add code to support '::=' making '::' have the same syntax as ':'
 const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?"|[\@\$\#]\*|(?:\?&|&\?|\?\|)|\.\.=?|\.\.\.|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|=>|->|[><!=]=?|[+\-*%&|^~]{1,2}|#[#@?]|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:0[box][_0-9A-Fa-f]+|[0-9_](?:\.(?:(?!\.)|(?:[0-9_]+)))?)\b|\.|\b\w+\b|\S/g;
 {//old code OBSILETE
@@ -54,7 +55,7 @@ function swapBrackets(){
 			msg ??= "";
 			if(!condision)throw errorFunc("ASSUMPTION FAILLED:" + msg);
 		}
-		return fooUsingAssumption=>fooUsingAssumption(condision);
+		return (fooUsingAssumption:Fn|any)=>typeof fooUsingAssumption == "function" ? fooUsingAssumption(condision) : fooUsingAssumption;
 	}
 	assert.fail = function(msg = undefined,errorFunc = e=>Error(e)){
 		if(debugMode){
@@ -190,16 +191,26 @@ const fs = Deno;//require("fs");
 					data = {...data};
 					for(let i=0;i<data.length;i++)delete data[i];
 				}
-				else Object.assign(this,data);
+				Object.assign(this,data);
 				this.errorData = Object.assign(new this.constructor.ErrorData(),data.errorData);
 			}
-			get asd(){return 42}
+			clone(name?:String){
+				return new WordSymbol({
+					word:name??this.word,
+					afix:this.afix,
+					type:this.type,
+					subtype:this.subtype,
+					patternType:this.patternType,
+					indent:this.indent,
+					errorData:this.#errorData,
+				});
+			}
 			//
 			word;//:string
 			afix;//:Int & (!!left_arg * 2) + !!right_arg
 			type;//:Symbol
 			subtype;//:Symbol
-			patternType;//:((Object & Class())|string)? ; used to contain pattern data
+			patternType;//:((Object & Class())|string)? ; used to contain pattern data ; UNUSED
 			indent;//:Number ; counts from 0 ; used for parsing multiline-strings
 			isAfterWhiteSpace;//:bool
 			//when type == (number|string)
@@ -545,7 +556,7 @@ const fs = Deno;//require("fs");
 				{
 					"..."  :{afix:OperatorData.AfixType.nofix},
 					"$$"   :{afix:OperatorData.AfixType.nofix},
-					"$"  :{afix:OperatorData.AfixType.nofix},
+					"$"    :{afix:OperatorData.AfixType.nofix},
 					"##"   :{afix:OperatorData.AfixType.nofix},
 					"#@"   :{afix:OperatorData.AfixType.nofix},
 					"#?"   :{afix:OperatorData.AfixType.nofix},
@@ -701,18 +712,6 @@ const fs = Deno;//require("fs");
 			])
 		;
 		const operatorProceedence_type = operatorProceedence;//for T_exp in 'a : T_exp'
-		class FunctionCallWordSymbol extends WordSymbol{
-			constructor(data){
-				super({word:"<|",...data});
-			}
-			word="<|";
-			operatorType=operatorProceedence.FunctionCallWordSymbol.prefix;
-			type=SyntaxTree.type.operator;
-			subtype=SyntaxTree.subtype.pipeline;
-			isReversed=true;
-			contence=[];
-			arguments=[];
-		}
 		interface NumberLiteralType{
 			value:Number|Number[],
 			//base:2|8|10|16,
@@ -727,6 +726,7 @@ const fs = Deno;//require("fs");
 				Object.assign(this,data);
 			}
 			toString(){return this.wordSymbol.word}
+			toTree():Tree<Expression>[]{return this.contence??this.args??[]}
 			//wordSymbol;//:WordSymbol?
 			possibleAfix = 0b11;//:Expression.afix
 			afix;//:Expression.afix
@@ -779,6 +779,7 @@ const fs = Deno;//require("fs");
 			static Bracket = class Bracket extends Expression {//for 'a:>b|>foo,c<:d'
 				//contence:Expression[]
 				args:Expression[1] = [undefined];
+				signitureExp?:Expression = null;
 				toString(){
 					return this.wordSymbol + " " + this.contence + " " + this.wordSymbol.endBracket;
 				}
@@ -795,27 +796,6 @@ const fs = Deno;//require("fs");
 				//argsExp:Expression[] ; //',arg' in 'foo,arg'
 			}
 		}
-		const CompoundExpression = {
-			Assignment:class Assignment extends Expression.Operator{//'a:T=b' ; declaration and assignment pattern
-				keyExp;//:Expression? ; 'a'
-				typeWordSymbol;//:WordSymbol? ; ':' or '::'
-				typeExp;//:Expression? ; 'T'
-				assignWordSymbol;//:WordSymbol? : '='
-				valueExp;//:Expression? ; 'b'
-				varient:Varients;//UNUSED
-				static Varients = EnumSymbols(
-					//:T?(=b)
-					"a:T=b",
-					"a:=b",
-					"a=b",
-					"a:",
-					"a:T",
-					":T=b",//situational '\:=' or '(:= ; )' or 'keyword := exp'
-					":=b",//situational 
-					"=b",//situational 
-				);
-			},
-		};
 		type Expression_FunctionCall = Expression[];
 		const contexts = {//()->WordSymbol
 			expressions(startIndex,parent):Expression[]{//:(Number,parent:WordSymbol&{contence:WordSymbol[]})->parent & mutate parent
@@ -858,253 +838,266 @@ const fs = Deno;//require("fs");
 						possibleAfixes.infix
 					][afix];
 				}
-				generate_exp_objects:for (; i < words.length && (word=words[i]) && word.word!=";";i++){
-					let exp = match(word.type,[//:mutate current_expression & valueStack
-						[[SyntaxTree.type.bracket],()=>
-							new Expression.Bracket(word,{
-								contence:contexts.expressions(0,word),
-								operatorData:operatorProceedence[word.word].postfix,//non-functioncall brackets (e.g.`;();` instead of `foo()`) are handled as a special case later on.
-								afix:OperatorData.AfixType.postfix,
-								knownAfix:false,
-							})
-						],
-						[[SyntaxTree.type.label],()=>
-							new Expression.Label(word)
-						],
-						[[SyntaxTree.type.value],()=>
-							Expression.Value.new_computeValue(word)
-						],
-						[[SyntaxTree.type.operator],()=>{
-							let possibleAfixes:{[_]:OperatorData} = operatorProceedence[word.word];
-							assert(!!possibleAfixes,`unhandled case for operator '${word.word}' in \`operatorProceedence\``);
-							if(words[i-1]?.word == "." && "><=|".includes(word.word)){//for 'array.=(mapFunction)' ; converts into label
-								word.type = SyntaxTree.type.label;
-								return new Expression.Label(word);
-							}
-							let num = !!possibleAfixes.prefix + !!possibleAfixes.infix + !!possibleAfixes.postfix + !!possibleAfixes.nofix;
-							let exp = new Expression.Operator(word,{});
-							let operatorData;
-							const isAssignableOperator = /[+\-*/&|^~&%]/;
-							if(word.word.match(isAssignableOperator) && words[i+1] == "=" && !words[i+1].isAfterWhiteSpace){//'+' '=' --> '+='
-								words[i+1].subWord = word;
-								word.operatorData = possibleAfixes.infix;
-								return null;//skip this word to
-							}
-							if([SyntaxTree.subtype.assignment,SyntaxTree.subtype.declaration].includes(word.subtype)){//handles ':' and '=' and their compound patterns ':=' in 'a:T=b'
-								let isStart = i == 0 || "\\".includes(words[i-1].word);// '{=' or '\:=' ; no left argument
-								let possibleAfix = 0b11;
-								if(isStart){
-									possibleAfix &= ~SyntaxTree.AfixType.operatorWithLeftArg;
+				{//generate syntaxTree ; contains lots of "special case" code
+					generate_exp_objects:for (; i < words.length && (word=words[i]) && word.word!=";";i++){
+						let exp = match(word.type,[//:mutate current_expression & valueStack
+							[[SyntaxTree.type.bracket],()=>
+								new Expression.Bracket(word,{
+									contence:contexts.expressions(0,word),
+									operatorData:operatorProceedence[word.word].postfix,//non-functioncall brackets (e.g.`;();` instead of `foo()`) are handled as a special case later on.
+									afix:OperatorData.AfixType.postfix,
+									knownAfix:false,
+								})
+							],
+							[[SyntaxTree.type.label],()=>
+								new Expression.Label(word)
+							],
+							[[SyntaxTree.type.value],()=>
+								Expression.Value.new_computeValue(word)
+							],
+							[[SyntaxTree.type.operator],()=>{
+								let possibleAfixes:{[_]:OperatorData} = operatorProceedence[word.word];
+								assert(!!possibleAfixes,`unhandled case for operator '${word.word}' in \`operatorProceedence\``);
+								if(words[i-1]?.word == "." && "><=|".includes(word.word)){//for 'array.=(mapFunction)' ; converts into label
+									word.type = SyntaxTree.type.label;
+									return new Expression.Label(word);
 								}
-								if(isDeclarationPattern(words[i],words[i+1])){
-									possibleAfix &= ~SyntaxTree.AfixType.operatorWithRightArg;
+								let num = !!possibleAfixes.prefix + !!possibleAfixes.infix + !!possibleAfixes.postfix + !!possibleAfixes.nofix;
+								let exp = new Expression.Operator(word,{});
+								let operatorData;
+								const isAssignableOperator = /[+\-*/&|^~&%]/;
+								if(word.word.match(isAssignableOperator) && words[i+1] == "=" && !words[i+1].isAfterWhiteSpace){//'+' '=' --> '+='
+									words[i+1].subWord = word;
+									word.operatorData = possibleAfixes.infix;
+									return null;//skip this word to
 								}
-								if(0)operatorData = 
-									isStart && word==":" && words[i+1] == "=" ? (isStart?possibleAfixes.nofix:possibleAfixes.postfix) :
-									word=="=" && isStart ? possibleAfixes.prefix :
-									possibleAfixes.infix//cases like 'a:' e.g. '{a:;a=2;}' are handled later
-								;
-								operatorData = afixIntoOperatorData(possibleAfixes,possibleAfix);
-								assert(operatorData,`'${exps}'`);
-							}
-							else{
-								assert(!(possibleAfixes.infix && possibleAfixes.prefix && possibleAfixes.postfix),"assumed 2 types of operator cases: 1: '++a' / 'a++' ; 2: '+a' / 'a+b'",e=>Error(e));
-								if(possibleAfixes.postfix)assert(!possibleAfixes.infix || num == 2);
-								if(possibleAfixes.infix)assert(!possibleAfixes.postfix || num == 2);
-								if(num == 1){
-									operatorData = possibleAfixes.infix ?? possibleAfixes.prefix ?? possibleAfixes.postfix ?? possibleAfixes.nofix;
-									assert(!!operatorData);
+								if([SyntaxTree.subtype.assignment,SyntaxTree.subtype.declaration].includes(word.subtype)){//handles ':' and '=' and their compound patterns ':=' in 'a:T=b'
+									let isStart = i == 0 || "\\".includes(words[i-1].word);// '{=' or '\:=' ; no left argument
+									let possibleAfix = 0b11;
+									if(isStart){
+										possibleAfix &= ~SyntaxTree.AfixType.operatorWithLeftArg;
+									}
+									if(isDeclarationPattern(words[i],words[i+1])){
+										possibleAfix &= ~SyntaxTree.AfixType.operatorWithRightArg;
+									}
+									if(0)operatorData = 
+										isStart && word==":" && words[i+1] == "=" ? (isStart?possibleAfixes.nofix:possibleAfixes.postfix) :
+										word=="=" && isStart ? possibleAfixes.prefix :
+										possibleAfixes.infix//cases like 'a:' e.g. '{a:;a=2;}' are handled later
+									;
+									operatorData = afixIntoOperatorData(possibleAfixes,possibleAfix);
+									assert(operatorData,`'${exps}'`);
 								}
 								else{
-									const hasArg = word => !!word && word.word != ";";//BODGED: TODO: assign preceedences & afixes in the next, expression tree building, phase.
-									let possibleAfix = 0b11;
-									if(
-										!hasArg(words[i-1]) ||
-										words[i-1]?.type == SyntaxTree.type.operator &&
-										(words[i-1].afix & SyntaxTree.AfixType.operatorWithRightArg)
-									)possibleAfix &= ~0b10;
-									if(
-										!hasArg(words[i+1]) ||
-										words[i+1]?.type == SyntaxTree.type.operator &&
-										(operatorProceedence[words[i+1]].infix)
-									){
-										if(hasArg(words[i+1]) && !operatorProceedence[words[i+1]].prefix){//assert is only infix
-										}else{
-											possibleAfix &= ~0b01;
-										}
-									}
-									operatorData = afixIntoOperatorData(possibleAfixes,possibleAfix);//:OperatorData?
-									if(!operatorData){//special cases
-										if(possibleAfix != OperatorData.AfixType.infix && possibleAfixes.nofix){
-											operatorData = possibleAfixes.nofix;
-										}
-										else if(possibleAfix == OperatorData.AfixType.infix && possibleAfixes.postfix){//e.g. 'i++' in 'i++ name'
-											operatorData = possibleAfixes.postfix;
-										}
-										else if(possibleAfix != OperatorData.AfixType.infix && possibleAfixes.postfix && num == 2){//handle ',' in 'foo,;'
-											operatorData = possibleAfixes.postfix;
-										}
-										else if(
-											words[i+1]?.type == SyntaxTree.type.operator &&
-											(operatorProceedence[words[i+1]].prefix)//allows for '!+a' chained prefix operators
-										){
-											operatorData = possibleAfixes.prefix;
-										}
-										else assert.impossibleCase(`unhanded case '${word}' in '${words.join(" ")}'`,e=>Error(e))
-									}
-									if(!operatorData){
-										assert.fail("unknown, but expected to be unreachable: it is unknown if this case is reachable. This code should be redundant although it doesn't hurt to run");
-										if(possibleAfixes.infix){
-											if(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)
-												operatorData = possibleAfixes.infix;
-											else
-												operatorData = possibleAfixes.prefix;
-										}
-										else{
-											if(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)
-												operatorData = possibleAfixes.postfix;
-											else
-												operatorData = possibleAfixes.prefix;
-										}
-									}
-									if(!operatorData)
-										word.throwError("syntax", `cannot use operator in that pattern got pattern: \`${
-												!!(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)?words[i-1]:""//"A":""
-											} ${word} ${
-												!!(possibleAfix&OperatorData.AfixType.operatorWithRightArg)?words[i+1]:""//"B":""
-											}\`. Expected \`${
-												!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithLeftArg)?"A":""
-											} ${word} ${
-												!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithRightArg)?"B":""
-											}\`.
-										`,e=>Error(e))
-									;
-								}
-							}
-							exp.operatorData = operatorData;
-							exp.afix = operatorData.afix;
-							word.afix = operatorData.afix;
-							return exp;
-						}],
-					]);
-					if(exp)exps.push(exp);
-				}
-				collect_arguments_into_tree:{
-					function collectIntoTree(startIndex = 0,localMaxProceedence,exps,isTypeSyntax = false):mutates<exps>{
-						const excludeAssignmentOperator = isTypeSyntax;
-						function isOptionalArgument(exp,j){
-							return exp?.operatorData?.optionalArg?.[j] || exp?.wordSymbol?.subtype == SyntaxTree.subtype.declaration;
-						}
-						function missingOperatorError(selfExp,argExp,argIndex){
-							selfExp.wordSymbol.throwError("syntax",`operator '${selfExp.wordSymbol}' missing ${["left", "right"][argIndex]} argument`,e=>Error(e));
-						}
-						function handleBracketAfix(exps,i){
-							if(exps[i] instanceof Expression.Bracket && !exps[i].knownAfix){//handles `(...)` and `foo(...)`
-								exps.knownAfix = true;
-								if(!exps[i-1] || ((exps[i-1].afix & Expression.AfixType.operatorWithRightArg) && !exps[i-1].args[1])){
-									delete exps[i].operatorData;
-									exps[i].afix = Expression.AfixType.nofix;
-									return true;
-								}
-								else exps[i].afix = Expression.AfixType.postfix;
-							}
-							return false;
-						}
-						for(let i = startIndex; i < exps.length; i++){
-							let exp = exps[i];
-							if(excludeAssignmentOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.assignment)break;
-							if(exp.afix != Expression.AfixType.prefix)continue;
-							if(exp.args[1])continue;
-							if(handleBracketAfix(exps,i))continue;
-							collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.declaration);
-							let argExp = exps[i+1];
-							let argProceendence = argExp?.operatorData?.proceedence?.[0] ?? Expression.defaultProceedence;
-							if(!isOptionalArgument(exp,1) && (exp.operatorData.proceedence[1] < argProceendence || !argExp))
-								missingOperatorError(exp,argExp,1);//:throws error
-							exp.args[1] = argExp;
-							exps.splice(i+1,1);
-						}
-						for(let proceedence = 0; proceedence <= localMaxProceedence; proceedence++){
-							function afixWrongArgumentError(exp):Never{
-								exp.wordSymbol.throwError("syntax",`invalid argument pattern for operator '${exp.wordSymbol.word}'`,e=>Error(e));
-							}
-							function handleArgs(exps,i,proceedence):out<{i}> & mutates<exps,exps[i]>{
-								let selfExp = exps[i];
-								if(match(selfExp.constructor,[
-									[[Expression.Operator,Expression.Bracket],()=>false],
-									[[Expression.Label,Expression.Value],()=>true],
-								])){return {i}};
-								selfExp.operatorData.proceedence.forEach((argProceendence,j)=>{//note: j:0|1 ; is the index of the argument
-									if(!(selfExp.operatorData.proceedence[0] == proceedence && selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration)){
-										if(argProceendence != proceedence)return;
-									}
-									let argIndex = j * 2 - 1;//:Index<exps->Expression>
-									let argExp = exps[i + argIndex];//:+1|-1
-									let hasParam = !!(selfExp.afix & [Expression.AfixType.operatorWithLeftArg,Expression.AfixType.operatorWithRightArg][j]);
-									let hasArg = !!selfExp.args[j];
-									if(!hasParam || selfExp.args[j])return;
-									assert(hasParam && !selfExp.args[j]);
-									if(!argExp){//:return
-										if(hasParam && !hasArg){
-											if(j == 0 && (i == 0 && ":=".includes(selfExp.wordSymbol.word))){//for '(:=exp)' and '\=exp'
-												selfExp.afix &= ~Expression.AfixType.operatorWithLeftArg;
-											}
-											else if(!isOptionalArgument(selfExp,j)) missingOperatorError(selfExp,argExp,j);
-										}
-										return;
+									assert(!(possibleAfixes.infix && possibleAfixes.prefix && possibleAfixes.postfix),"assumed 2 types of operator cases: 1: '++a' / 'a++' ; 2: '+a' / 'a+b'",e=>Error(e));
+									if(possibleAfixes.postfix)assert(!possibleAfixes.infix || num == 2);
+									if(possibleAfixes.infix)assert(!possibleAfixes.postfix || num == 2);
+									if(num == 1){
+										operatorData = possibleAfixes.infix ?? possibleAfixes.prefix ?? possibleAfixes.postfix ?? possibleAfixes.nofix;
+										assert(!!operatorData);
 									}
 									else{
-										const addArg = ()=>{
-											selfExp.args[j] = argExp;
-											exps.splice(i + argIndex,1);
-											if(j == 0)i--;
-										};
-										{//handle special cases
-											if(argExp.wordSymbol.word == ":" && selfExp.wordSymbol.word == "=" && j == 0){
+										const hasArg = word => !!word && word.word != ";";//BODGED: TODO: assign preceedences & afixes in the next, expression tree building, phase.
+										let possibleAfix = 0b11;
+										if(
+											!hasArg(words[i-1]) ||
+											words[i-1]?.type == SyntaxTree.type.operator &&
+											(words[i-1].afix & SyntaxTree.AfixType.operatorWithRightArg)
+										)possibleAfix &= ~0b10;
+										if(
+											!hasArg(words[i+1]) ||
+											words[i+1]?.type == SyntaxTree.type.operator &&
+											(operatorProceedence[words[i+1]].infix)
+										){
+											if(hasArg(words[i+1]) && !operatorProceedence[words[i+1]].prefix){//assert is only infix
+											}else{
+												possibleAfix &= ~0b01;
+											}
+										}
+										operatorData = afixIntoOperatorData(possibleAfixes,possibleAfix);//:OperatorData?
+										if(!operatorData){//special cases
+											if(possibleAfix != OperatorData.AfixType.infix && possibleAfixes.nofix){
+												operatorData = possibleAfixes.nofix;
+											}
+											else if(possibleAfix == OperatorData.AfixType.infix && possibleAfixes.postfix){//e.g. 'i++' in 'i++ name'
+												operatorData = possibleAfixes.postfix;
+											}
+											else if(possibleAfix != OperatorData.AfixType.infix && possibleAfixes.postfix && num == 2){//handle ',' in 'foo,;'
+												operatorData = possibleAfixes.postfix;
+											}
+											else if(
+												words[i+1]?.type == SyntaxTree.type.operator &&
+												(operatorProceedence[words[i+1]].prefix)//allows for '!+a' chained prefix operators
+											){
+												operatorData = possibleAfixes.prefix;
+											}
+											else assert.impossibleCase(`unhanded case '${word}' in '${words.join(" ")}'`,e=>Error(e))
+										}
+										if(!operatorData){
+											assert.fail("unknown, but expected to be unreachable: it is unknown if this case is reachable. This code should be redundant although it doesn't hurt to run");
+											if(possibleAfixes.infix){
+												if(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)
+													operatorData = possibleAfixes.infix;
+												else
+													operatorData = possibleAfixes.prefix;
+											}
+											else{
+												if(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)
+													operatorData = possibleAfixes.postfix;
+												else
+													operatorData = possibleAfixes.prefix;
+											}
+										}
+										if(!operatorData)
+											word.throwError("syntax", `cannot use operator in that pattern got pattern: \`${
+													!!(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)?words[i-1]:""//"A":""
+												} ${word} ${
+													!!(possibleAfix&OperatorData.AfixType.operatorWithRightArg)?words[i+1]:""//"B":""
+												}\`. Expected \`${
+													!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithLeftArg)?"A":""
+												} ${word} ${
+													!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithRightArg)?"B":""
+												}\`.
+											`,e=>Error(e))
+										;
+									}
+								}
+								exp.operatorData = operatorData;
+								exp.afix = operatorData.afix;
+								word.afix = operatorData.afix;
+								return exp;
+							}],
+						]);
+						if(exp)exps.push(exp);
+					}
+					collect_arguments_into_tree:{
+						function collectIntoTree(startIndex = 0,localMaxProceedence,exps,isTypeSyntax = false):mutates<exps>{
+							const excludeAssignmentOperator = isTypeSyntax;
+							function isOptionalArgument(exp,j){
+								return exp?.operatorData?.optionalArg?.[j] || exp?.wordSymbol?.subtype == SyntaxTree.subtype.declaration;
+							}
+							function missingOperatorError(selfExp,argExp,argIndex){
+								selfExp.wordSymbol.throwError("syntax",`operator '${selfExp.wordSymbol}' missing ${["left", "right"][argIndex]} argument`,e=>Error(e));
+							}
+							function handleBracketAfix(exps,i){
+								if(exps[i] instanceof Expression.Bracket && !exps[i].knownAfix){//handles `(...)` and `foo(...)`
+									exps.knownAfix = true;
+									if(!exps[i-1] || ((exps[i-1].afix & Expression.AfixType.operatorWithRightArg) && !exps[i-1].args[1])){
+										delete exps[i].operatorData;
+										exps[i].afix = Expression.AfixType.nofix;
+										return true;
+									}
+									else exps[i].afix = Expression.AfixType.postfix;
+								}
+								return false;
+							}
+							for(let i = startIndex; i < exps.length; i++){
+								let exp = exps[i];
+								if(excludeAssignmentOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.assignment)break;
+								if(exp.afix != Expression.AfixType.prefix)continue;
+								if(exp.args[1])continue;
+								if(handleBracketAfix(exps,i))continue;
+								collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.declaration);
+								let argExp = exps[i+1];
+								let argProceendence = argExp?.operatorData?.proceedence?.[0] ?? Expression.defaultProceedence;
+								if(!isOptionalArgument(exp,1) && (exp.operatorData.proceedence[1] < argProceendence || !argExp))
+									missingOperatorError(exp,argExp,1);//:throws error
+								exp.args[1] = argExp;
+								exps.splice(i+1,1);
+								//note: do not `break;` here, the call to `collectIntoTree()` does not cover all `exps` ; consider removing this comment if 'collectIntoTree' was removed from this for loop
+							}
+							for(let proceedence = 0; proceedence <= localMaxProceedence; proceedence++){
+								function afixWrongArgumentError(exp):Never{
+									exp.wordSymbol.throwError("syntax",`invalid argument pattern for operator '${exp.wordSymbol.word}'`,e=>Error(e));
+								}
+								function handleArgs(exps,i,proceedence):out<{i}> & mutates<exps,exps[i]>{
+									let selfExp = exps[i];
+									if(match(selfExp.constructor,[
+										[[Expression.Operator,Expression.Bracket],()=>false],
+										[[Expression.Label,Expression.Value],()=>true],
+									])){return {i}};
+									selfExp.operatorData.proceedence.forEach((argProceendence,j)=>{//note: j:0|1 ; is the index of the argument
+										if(!(selfExp.operatorData.proceedence[0] == proceedence && selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration)){
+											if(argProceendence != proceedence)return;
+										}
+										let argIndex = j * 2 - 1;//:Index<exps->Expression>
+										let argExp = exps[i + argIndex];//:+1|-1
+										let hasParam = !!(selfExp.afix & [Expression.AfixType.operatorWithLeftArg,Expression.AfixType.operatorWithRightArg][j]);
+										let hasArg = !!selfExp.args[j];
+										if(!hasParam || selfExp.args[j])return;
+										assert(hasParam && !selfExp.args[j]);
+										if(!argExp){//:return
+											if(hasParam && !hasArg){
+												if(j == 0 && (i == 0 && ":=".includes(selfExp.wordSymbol.word))){//for '(:=exp)' and '\=exp'
+													selfExp.afix &= ~Expression.AfixType.operatorWithLeftArg;
+												}
+												else if(!isOptionalArgument(selfExp,j)) missingOperatorError(selfExp,argExp,j);
+											}
+											return;
+										}
+										else{
+											const addArg = ()=>{
+												selfExp.args[j] = argExp;
+												exps.splice(i + argIndex,1);
+												if(j == 0)i--;
+											};
+											{//handle special cases
+												if(argExp.wordSymbol.word == ":" && selfExp.wordSymbol.word == "=" && j == 0){
+													addArg();
+													return;
+												}
+												if(selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration && j == 1 && exps[i+1]?.wordSymbol?.subtype != SyntaxTree.subtype.assignment){//does both arguments of ':' before the '=' to allow 'a:T=b' --> '(a:T)=b' and prevent 'a:(T=b)'
+													collectIntoTree(i+1,selfExp.operatorData.proceedence[1],exps,true);
+												}
+											}
+											if((argExp.operatorData?.proceedence?.[1-j] ?? Expression.defaultProceedence) + (!selfExp.operatorData.isInverseBracketing && j) <= argProceendence){
+												if(j == 1 && selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration && argExp.wordSymbol.subtype == SyntaxTree.subtype.assignment)return;//prevents 'a:=b' -> 'a:(=b)'
 												addArg();
 												return;
 											}
-											if(selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration && j == 1 && exps[i+1]?.wordSymbol?.subtype != SyntaxTree.subtype.assignment){//does both arguments of ':' before the '=' to allow 'a:T=b' --> '(a:T)=b' and prevent 'a:(T=b)'
-												collectIntoTree(i+1,selfExp.operatorData.proceedence[1],exps,true);
-											}
+											if(!isOptionalArgument(selfExp,j))missingOperatorError(selfExp,argExp,j);
 										}
-										if((argExp.operatorData?.proceedence?.[1-j] ?? Expression.defaultProceedence) + (!selfExp.operatorData.isInverseBracketing && j) <= argProceendence){
-											if(j == 1 && selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration && argExp.wordSymbol.subtype == SyntaxTree.subtype.assignment)return;//prevents 'a:=b' -> 'a:(=b)'
-											addArg();
-											return;
+									});
+									if(selfExp.operatorData.includes){//for `keyword_1 exp_1 keyword_2 exp_2` pattens e.g. `for (...) do (...)`
+										let argExp = exps[i+1];
+										if(selfExp.operatorData.includes?.includes(argExp?.wordSymbol?.word)){
+											selfExp.args[2] = argExp;
+											exps.splice(i+1,1);
 										}
-										if(!isOptionalArgument(selfExp,j))missingOperatorError(selfExp,argExp,j);
 									}
-								});
-								if(selfExp.operatorData.includes){//for `keyword_1 exp_1 keyword_2 exp_2` pattens e.g. `for (...) do (...)`
-									let argExp = exps[i+1];
-									if(selfExp.operatorData.includes?.includes(argExp?.wordSymbol?.word)){
-										selfExp.args[2] = argExp;
-										exps.splice(i+1,1);
-									}
+									return {i};
 								}
-								return {i};
-							}
-							for(let i = startIndex; i < exps.length; i++){
-								if(!exps[i].operatorData)continue;
-								if(exps[i].operatorData.isInverseBracketing)continue;
-								if(excludeAssignmentOperator && exps[i].wordSymbol.subtype == SyntaxTree.subtype.assignment)break;
-								if(handleBracketAfix(exps,i))continue;
-								({i} = handleArgs(exps,i,proceedence));
-							}
-							for(let i = exps.length - 1; i >= startIndex; i--){
-								if(!exps[i].operatorData)continue;
-								if(!exps[i].operatorData.isInverseBracketing)continue;
-								if(excludeAssignmentOperator && exps[i].wordSymbol.subtype == SyntaxTree.subtype.assignment)break;
-								({i} = handleArgs(exps,i,proceedence));
+								for(let i = startIndex; i < exps.length; i++){
+									if(!exps[i].operatorData)continue;
+									if(exps[i].operatorData.isInverseBracketing)continue;
+									if(excludeAssignmentOperator && exps[i].wordSymbol.subtype == SyntaxTree.subtype.assignment)break;
+									if(handleBracketAfix(exps,i))continue;
+									({i} = handleArgs(exps,i,proceedence));
+								}
+								for(let i = exps.length - 1; i >= startIndex; i--){
+									if(!exps[i].operatorData)continue;
+									if(!exps[i].operatorData.isInverseBracketing)continue;
+									if(excludeAssignmentOperator && exps[i].wordSymbol.subtype == SyntaxTree.subtype.assignment)break;
+									({i} = handleArgs(exps,i,proceedence));
+								}
 							}
 						}
+						collectIntoTree(0,maxProceedence,exps);
 					}
-					collectIntoTree(0,maxProceedence,exps);
 				}
 				if(exps.length > 1){
-					loga(printTree(exps))
-					exps[1].wordSymbol.throwError("syntax", `double expression. missing expression sepparator or operator. Expected '.', ';', or an operator. Found '${exps[1].wordSymbol.word}'`, e=>Error(e));
+					if(0)console.error(printTree(exps));
+					let adjacentSides:Expression[2] = [exps[0],exps[1]].map((v,i)=>{
+						let otherSide = 1 - i;
+						let tryNext = forBail(v.wordSymbol.errorData.file.words.length);
+						//assume: v:Tree structure
+						while(v instanceof Expression.Operator && v.args[otherSide]){
+							tryNext();
+							v = v.args[otherSide];
+						}
+						return v;
+					});
+					adjacentSides[1].wordSymbol.throwError("syntax", `double expression. missing expression sepparator or operator. Expected '.', ';', or an operator. Found '${exps[1].wordSymbol.word}'`, e=>Error(e));//TODO: make this error identify the 2 adjacent wordSymbols
 				}
 				return {index:i,expression:exps[0]};
 			},
@@ -1115,442 +1108,471 @@ const fs = Deno;//require("fs");
 		Object.assign(parseOperatorSyntaxTree,{
 			OperatorData,
 			operatorProceedence,
-			FunctionCallWordSymbol,
+			Expression,
 		});
 		return parseOperatorSyntaxTree;
 	})();
-	function parseAST(rootPattern){//parses abstract syntax tree
-		//data
-			class Value{
-				constructor(data={}){Object.assign(this,data);}
-				static type = EnumSymbols("string", "number", "bool", "optional", "type");
+	function parseAST(rootPattern:Expression[]):Expression[]{
+		const {Expression} = parseIntoOperatorSyntaxTree;
+		class DeclarationAssignmentPattern extends Expression.Operator{
+			constructor(data={}){super(data);Object.assign(this,data)}
+			isDeclaration:bool;
+			isAssignment:bool;
+			wordSymbol:WordSymbol;
+			wordSymbols:[WordSymbol?,WordSymbol?];
+			typeArg?:Expression;
+			args:[Expression?,Expression?];
+			toTree(){
+				return [this.args[0],this.typeArg,this.args[1]];
 			}
-			class Value_Type extends Value{
-				constructor(data={}){super();Object.assign(this,data);}
+			static isDeclarationOrAssignmentExp(exp){//':='
+				return exp instanceof this || [SyntaxTree.subtype.declaration,SyntaxTree.subtype.assignment].includes(exp?.wordSymbol?.subtype);
+			};
+			static tryFromExp(expression?:Expression):Option<Self>{
+				if(this.isDeclarationOrAssignmentExp(expression))
+					return this.fromExp(expression);
+				return undefined;
 			}
-			class VariableRef extends Value{//'a'
-				constructor(data={}){super();Object.assign(this,data);}
-				declaration?:&Variable;
-				name:WordSymbol & label;
-			}
-			interface WordSymbol{
-				//input:
-					word;
-					operatorType;
-					type:SyntaxTree.type;
-					parent:WordSymbol;
-				//intermideate:
-				//output:
-					parentScope:WordSymbol & (bracket | function_ | typeScope);
-					pattern:PatternData;
-					wordScopeType:WordScopeType;
-			}
-			const WordScopeType = EnumSymbols("expression", "type", "parameter");
-			type LabelIdentifier = String|index;//might not need symbols
-			class Variable{//variable declarations
-				constructor(data={}){Object.assign(this,data);}
-				name:WordSymbol&string;
-				firstAssignment:VariableRef=undefined;
-				currentAssignment:VariableRef=undefined;
-				refs:VariableRef[]=[];
-			}
-			class Parameter extends Variable{//'let a' or 'a->'
-				name:WordSymbol&string;
-				refs:VariableRef[]=[];
-				constructor(data={}){super();Object.assign(this,data);}
-				type:WordSymbol&expression;
-				path:(int|WordSymbol)[];// index or property
-				rootParameterWord:WordSymbol//the root parameter expression e.g. '()' in '(a b)->'
-				isSpreadParameter:bool;//'args' in '(a b ...args c)->'
-				toString(){
-					return this.name+"";
+			static fromExp(declarationOrAssignment?:Expression):Self{
+				let declaration:Expression;
+				let assignment:Expression;
+				if(declarationOrAssignment.wordSymbol.subtype == SyntaxTree.subtype.assignment){
+					assignment = declarationOrAssignment;
+					declaration = assignment.args[0] ?? undefined;
 				}
-			}
-			class ScopeRef extends Variable{
-				constructor(data={}){super();Object.assign(this,data);}
-				scopeRef:WordSymbol;//for 'a' in 'ref a'
-				refs:(&VariableRef)[];//refs to this variable
-				value:Parameter;//'a' in 'let a = 2' ; includes variable's declaration
-			}
-			interface PatternData {//used in word.pattern
-				parameter:WordSymbol&param;//for 'a' in 'a=b' 'a->b' 'a|b'
-				argument:WordSymbol&(exp|shortExp); //for 'b' in 'a=b' 'a->b' 'a<|b'
-				arguments:WordSymbol[]&(exp|shortExp)[];//e.g. for 'foo[a][b][c]'
-				parameters:Parameter[];//:Map(parameter_name=>type&expression) & Map((String|WordSymbol)=>WordSymbol)
-				refs;
-				variables_start:Map<String,Variable>;
-				variables_current:Map<String,Variable>;
-				value:VariableRef|Value|WordSymbol&type.value;
-				contence:{
-					words:WordSymbol[],
-					scopeType:ScopeTypes,
+				else{
+					assignment = undefined;
+					declaration = declarationOrAssignment;
 				}
+				if(declaration.wordSymbol.subtype != SyntaxTree.subtype.declaration)declaration = undefined;
+				assert(assignment ?? declaration);
+				return new DeclarationAssignmentPattern({
+					wordSymbols:[declaration?.wordSymbol,assignment?.wordSymbol],
+					wordSymbol:(declaration?.wordSymbol??assignment?.wordSymbol).clone(":="),
+					typeArg:declaration?.args[1] ?? undefined,
+					args:[declaration?.args[0] ?? (!declaration?assignment?.args[0]:undefined) ?? undefined, assignment?.args[1] ?? undefined],
+					isDeclaration:!!declaration,
+					isAssignment:!!assignment,
+				})
 			}
-			interface ScopeData extends PatternData{
-				variables_start:Map<String,Variable>;
-				variables_current:Map<String,Variable>;
-				contence:{
-					words:WordSymbol[],
-					scopeType:ScopeTypes,
-				}
+		}
+		interface SignitureExp {//'(:T=exp; )' or '\:T=' or 'mod:'
+			signitureExp?:Expression|null;
+		}
+		class FunctionPattern extends Expression.Operator{//'\exp'
+			constructor(data={}){super(data);Object.assign(this,data)}
+			parameters?:Expression;
+			returnType?:Expression;
+			signitureExp?:Expression = null;
+			toTree(){
+				return [this.signitureExp,this.args[1]];
 			}
-		//----
-		{//syntax checking
-			type W = WordSymbol;
-			let ScopeTypes = EnumSymbols(
-				"normal",//'()', '{}', '[]'
-				"type",//'trait exp'
-				"match",//'...' in 'match v {...}'
-			 )
-			const todo = [];
-			function addScopeProperties(word):mutates<word>{
-				word.pattern ??= {};
-				Object.assign(word.pattern,{
-					variables_start:new Set(),
-					variables_current:new Map(),
-					variables_declared:new Set(),
-					...word.pattern,
-				});
-			}
-			pass1:{//checks syntax, links some variable refs, adds declarations, readjusts syntax tree
-				function addParents(parent:W){
-					for(let word of parent.contence){
-						if(!word)continue;
-						word.parent = parent;
-						if(word.contence)addParents(word)
+		};
+		class ModulePattern extends Expression{//'mod exp'
+			constructor(data={}){super(data);Object.assign(this,data)}
+			wordSymbol?:WordSymbol;
+			signitureExp?:Expression = null;
+			contence:Expression[];
+		}
+		class GlobalExp extends ModulePattern{
+			wordSymbol={throwError(type,msg,errorFunc){throw Error("cannot yet reference the global context in error message")}}
+		}
+		const rootExp = new GlobalExp();
+		Expression.DeclarationAssignmentPattern = DeclarationAssignmentPattern;
+		const isDeclarationOrAssignmentExp = DeclarationAssignmentPattern.isDeclarationOrAssignmentExp;
+		{//identify and collect patterns '\' ':='
+			function forEach(exps){
+				for(let i = 0; i < exps.length; i++){
+					let exp:Option<Expression> = exps[i];
+					if(!exp)continue;
+					let pattern:Option<Expression> = DeclarationAssignmentPattern.tryFromExp(exp);
+					if(!pattern && exp.wordSymbol.word == "\\")pattern = new FunctionPattern(exp);
+					if(pattern){
+						exps[i] = exp = pattern;
 					}
+					if(exp)forEach(exp.toTree());
 				}
-				addParents(rootPattern);
-				function expression(words:Tree<W>,scopeType?:ScopeType,scopeObj:W){//() or {}
-					scopeType ??= ScopeTypes.normal;
-					addScopeProperties(scopeObj);
-					function tryDeclareVariable(word:WordSymbol&Parameter.rootParameterWord,isScopeRef:bool=false){
-						let parameters:Parameter[] = word.pattern.parameters;
-						for(let parameter of parameters){
-							let parameterName:String = parameter.name.word;
-							if(!scopeObj.pattern.variables_start.has(parameterName)){
-								scopeObj.pattern.variables_start.add(parameterName,parameter);
-								scopeObj.pattern.variables_current.set(parameter.name.word,parameter);
+			}
+			forEach(rootPattern);
+		}
+		find_references:{//handles declarations and references
+			class Reference{
+				constructor(data={}){Object.assign(this,data)}
+				parent:Expression;//where it was declared
+				lastAssignment:Expression;
+			}
+			interface Expression{
+				context:Closure,
+				args:[Expression?,Expression?],
+			}
+			const operators = {
+				//programming note: the operator data is separate from operatorProceedence, since operatorProceedence is messy enough and this one holds different data.
+				//TODO: fill in with all operators
+			};
+			function isGlobalExp(parentExp:Expression|null){//returns true if exp represents the global object
+				return parentExp === null;
+			}
+			function isStructBracket(exp){//done to allow '(a=1;b=2;c=3)' --> '(a:=1;b:=2;c:=3)'
+				return exp?.wordSymbol?.word == "(";
+			}
+			function parseKey(exp):String|Symbol&Mutates<exp>{//UNUSED
+				interface Expression{
+					symbol:String|Symbol<belongs_to_expression>;
+				}
+				if(exp.symbol !== undefined)return exp.symbol;
+				if(exp instanceof Expression.Label){
+					exp.symbol = exp.word;
+				}
+				else if(exp?.wordSymbol?.word == "$"){
+					exp.symbol = exp.word;
+				}
+				else if(exp?.wordSymbol?.word == "$$"){
+					exp.symbol = Symbol("unique symbol");
+				}
+				return exp.symbol;
+			}
+			class Closure{
+				constructor(data={}){Object.assign(this,data)}
+				parent?:Closure;
+				labels:Map<Key,Delcaration> = new Map();
+				containingKeys:Set<Key> = new Set();
+			}
+			class Delcaration{
+				constructor(data={}){Object.assign(this,data)}
+				destructuredRef:DestructuredRef;
+				currentValue:Expression;
+			}
+			class Assignment{
+				constructor(data={}){Object.assign(this,data)}
+				destructuredRef:DestructuredRef;
+				lastAssignment?:LinkedList<Assignment|null>;
+				declaration:Declaration;
+			}
+			function findLabelDeclaration(closure,labelName:Key):{closure,label:Option<Delcaration>}{
+				if(!closure)return undefined;
+				if(typeof labelName == "string"){
+					if(closure.containingLabels.has(labelName))return {closure,label:closure.labels.get(labelName)??null};
+				}
+				else{
+
+				}
+			}
+			type DestructurePath = DestructurePathItem[];
+			type DestructurePathItem = ((Number&Index)|String|TypedKey);//:[]DestructurePath
+			interface DestructuredRefData{//:data class ; not storeable
+				key:String|KeyExp;//"a" in 'a=b'
+				path:DestructurePath[];//'b' in 'a.b = c'
+				exp:Expression;//'a' in 'a=b'
+			}
+			class DestructuredRef{//:data class ; storeable
+				constructor(data={}){Object.assign(this,data)}
+				key:String|KeyExp;
+				path:DestructurePath[];
+				pattern:Expression&DeclarationAssignmentPattern;//
+				exp:Expression;//'a' in 'a=b'
+			}
+			type Key = String|KeyExp;
+			type KeyExp = Expression;//'label' '$type_exp' e.g. '$(A.B*C)'
+			class Key{
+				static enum = EnumSymbols("string", "typeExp");
+				static isKey(exp){
+					return exp instanceof Expression.Label || exp?.wordSymbol?.word == "$";
+				}
+				static tryGetKey(keyExp?:Expression):Result<String|Expression,undefined>{
+					return !keyExp?undefined:
+						keyExp instanceof Expression.Label?keyExp.wordSymbol.word:
+						keyExp?.wordSymbol?.word == "$"?keyExp:
+						undefined;
+				}
+				static getKey_expect(keyExp){
+					return this.tryGetKey(keyExp)??(keyExp?keyExp.wordSymbol.throwError("syntax",`compiler error: '${keyExp.wordSymbol}' is not a key`,e=>Error(e)):assert.impossibleCase());
+				}
+				static KeySymbol = Symbol("key");//:Symbol->Key
+			}
+			class TypedKey{//'T' and 'b' in '(a:T=b) = obj;'
+				constructor(data={}){Object.assign(this,data)}
+				type:Expression&type_exp;
+				key:Key;
+			}
+			function getDestructuredKeysFromExp(exp):Pure&DestructuredRefData[]|Err<syntax>{//'[a;b] = array;' function arguments and arrays.
+				let refs:DestructuredRefData[] = [];
+				function forEachInTree(exp:Expression,path:owned<(Index|String|TypedKey)[]>,isAssignment,isDeclaration){
+					if(exp instanceof Expression.Bracket){
+						let pathIndex = path.length;
+						let pathI = 0;
+						let bracketExp = exp;
+						function handleSingleKey(exp,typedKey){//handles 'a' , '(...)' , 'a:T'
+							let key;
+							if(isStructBracket(bracketExp)){
+								key = Key.getKey_expect(exp);
 							}
+							else{
+								key = pathI;
+							}
+							if(typedKey){
+								typedKey.key = key;
+								key = typedKey;
+							}
+							forEachInTree(exp,[...path,key]);
 						}
-					}
-					function tryGetVariable(word:WordSymbol&Parameter.rootParameterWord,isScopeRef:bool=false){
-						scopeType.variables_current.set(parameter.name,parameter);
-					}
-					for(let i=0;i<words.length;i++){
-						const word:(WordSymbol|null) = words[i];
-						if(word===null){continue}//handle `= 2` -> `'='[null,'2']`
-						assert(word instanceof WordSymbol);
-						word.pattern ??= {};
-						word.wordScopeType = WordScopeType.expression;
-						let innerScope = scopeType;//:ScopeType? & bool ; is Some<> if we want to parse the contence after the match statement
-						if(word.type == SyntaxTree.type.parameterExp){//done for both normal and match expressions
-							word.pattern.parameter = word.isReversed ? word.arguments[1] : word.arguments[0];
-							word.pattern.arguments = [word.isReversed ? word.arguments[1] : word.arguments[0]];//note: pattern's args are in the correct ordered, which is baced on the operator
-							let parameterIndex = word.contence.indexOf(word.arguments[0]);
-							
-						}
-						match(scopeType,[
-							[[ScopeTypes.match],()=>{
-								match(word.type,[
-									[[SyntaxTree.type.parameterExp],()=>{
-										//'case->exp'
-										let caseParam = word.pattern.parameter;
-										{//parse case type/param exp
-											expression([caseParam],ScopeTypes.type,word);
-										}
-										expression([word.pattern.arguments[0]],ScopeTypes.normal,word.pattern.arguments[0]);
-										expression(word.contence.filter(v=>!word.arguments.includes(v)),ScopeTypes.normal,word);//handle voids
-										innerScope = undefined;
-									}],
-								],()=>{expression([word],ScopeTypes.normal,scopeObj)});
-								if(word.contence?.length && innerScope){
-									expression(word.contence,ScopeTypes.normal,scopeObj);
-								}
-							}],
-							[[ScopeTypes.normal,ScopeTypes.type],()=>{
-								match(word.type,[
-									[[SyntaxTree.type.parameterExp],()=>{//'a->b' 'a=>b' 'b<-a' 'b=<a'
-										if(word.isReversed)word.arguments = [word.arguments[1],word.arguments[0]];
-										{
-											if(!word.isReversed){// 'a->' in 'parem->exp'
-												if(word.subtype == SyntaxTree.subtype.function)mutates_AST:if(!word.pattern.parameter && !word.isReversed){//tries: unwrap and pull parameter from leftside function call chain
-													//'[a[a] ->a]' --> '[a [a]->a]'
-													let endParent = words[i-1];//:Tree<WordSymbol>
-													//let tryNext = forBail();
-													while(endParent?.arguments){
-														function checkIsParameter(word){
-															return (word?.operatorType?.proceedence||-Infinity)<=parseIntoOperatorSyntaxTree.operatorProceedence.parameter.prefix.proceedence;
-														}
-														let lastWord = endParent.arguments[endParent.arguments.length-1];
-														if(checkIsParameter(lastWord)){
-															const parameter = lastWord;
-															endParent.arguments[endParent.arguments.length-1] = word;
-															endParent.contence.splice(endParent.contence.indexOf(parameter),1);
-															word.parent = endParent;
-															parameter.parent = word;
-															if(word.parent){
-																word.parent.contence.splice(word.parent.contence.indexOf(word),1);
-																word.parent.arguments.splice(word.parent.contence.indexOf(word),1);
-																if(words == word.parent.contence || words == word.parent.arguments)i--;
-															}
-															word.arguments[0] = parameter;
-															{//assersions
-																let indexOnContence = endParent.contence.indexOf(parameter);
-																if(indexOnContence == -1)assert.impossibleCase("invalid contence/arguments");
-															}
-															break;
-														}
-														endParent = lastWord;
-													}
-												}
-											}
-											if(
-												match(word.subtype,[//allows for 'mut=b' and '[=b]' throws error on '(=b)' or '->b'
-													[[undefined,SyntaxTree.subtype.function],()=>true],
-													[[SyntaxTree.subtype.assignment],()=>!(word.word == "[" || word.parent.subtype == SyntaxTree.subtype.mutabilityModifier)]
-												])&&
-												!word.pattern.parameter
-											){
-												let isFunction = word.subtype == SyntaxTree.subtype.function;
-												word.throwError("syntax",
-													"missing " + ["variable name", "parameter"][+isFunction]
-													+ " on " + ["assignment", "function declaration"][+isFunction],
-													e=>Error(e)
-												);
-											}
-											word.pattern.parameters = getParameters(word.pattern.parameter,word.subtype == SyntaxTree.subtype.function);
-											if(word.pattern.arguments[0]){
-												expression(word.pattern.arguments,scopeType,word);
-											}
-											innerScope = undefined;
-										}
-									}],
-									[[SyntaxTree.type.keyword_parameter,SyntaxTree.type.keyword_parameter_expression],()=>{//'let param' and 'into param exp'
-										if(!word.arguments[0] && word.subtype == SyntaxTree.subtype.declaration && word.parent.subtype == SyntaxTree.subtype.assignment){
-											if(!word.arguments[0]){//'let= a' ; same as 'let a = a'
-												assert(word.parent.arguments[0] == word);//assume: arguments from '=>' and '=<' are in the right order
-												word.pattern.parameter = word.parent.arguments[1];
-											}
-											else word.pattern.parameter = word.parent.arguments[1];
-										}
-										else {
-											if(!word.arguments[0])word.throwError("syntax", "missing expression", e=>Error(e));
-											word.pattern.parameter = word.arguments[0];
-										}
-										word.pattern.parameters = getParameters(word.pattern.parameter);
-										if(word.subtype == SyntaxTree.subtype.declaration){//'let a'
-											tryDeclareVariable(word);
-											innerScope = undefined;
-										}
-										else if(word.subtype == SyntaxTree.subtype.scopeRef){//'into a exp' or 'from a exp'
-											expression(word.contence,innerScope,word);
-											innerScope = undefined;
-										}
-									}],
-									[[SyntaxTree.type.keyword_expression],()=>{//'static exp'
-										match(word.subtype,[
-											[[SyntaxTree.subtype.typeScope],()=>{//'type' or 'trait'
-												expression(word.contence,ScopeTypes.type,word);
-											}],
-											[[SyntaxTree.subtype.void],()=>{
-											}],
-											[()=>["break", "yeild"].includes(word.word),()=>{
-											}],
-										],()=>{
-											if(!word.arguments?.[0])word.throwError("syntax", "missing expression", e=>Error(e));
+						const perentExp = exp;
+						for(let i = 0; i < perentExp.contence.length; i++){
+							let exp = perentExp.contence[i];
+							match(exp,[
+								[()=>exp instanceof DeclarationAssignmentPattern,()=>{//'(b=a):=(a=2);assert b == 2'
+									let key,value,typedKey;
+									if(exp.isDeclaration){
+										typedKey = new TypedKey({
+											type:exp[Key.KeySymbol],
+											key:undefined,//defined later
 										});
-									}],
-									[[SyntaxTree.type.label],()=>{
-										function addVariableRef(word,scopeObj):mutates<word>{
-											word.pattern ??= {};
-											let name = word.word;
-											Object.assign(word.pattern,{
-												value:new VariableRef({
-													name:name,
-													source:word,
-													declaration:undefined,
-												})
-											});
-											if(scopeObj.pattern.variables_current.has(name)){
-												const declaration:Variable = scopeObj.pattern.variables_current.get(name);
-												word.pattern.value.declaration = declaration;
-												declaration.refs.push(word.pattern.var);
-											}
-											else{
-											}
-										}
-										addVariableRef(word,scopeObj);
-									}],
-									[[SyntaxTree.type.value],()=>{
-										word.pattern ??= {};
-										word.pattern.value = word.parent;
-									}],
-									[[SyntaxTree.type.blockType],()=>{
-										if(word.arguments.length < word.operatorType.numOfArgs)
-										if(!word.parent.operatorType?.includes?.includes(word.word)){//allow for 'do exp while exp'
-											word.throwError("syntax", "missing argument for " + word.word + " statement", e=>Error(e));
-										}
-										match(word.word,[
-											[["for"],()=>{
-												expression(word.contence,scopeType,word.arguments[3]);
-												innerScope = undefined;
-												//'for start condision next do'
-											}],
-											[["match"],()=>{//TODO
-												expression([word.arguments[0]],scopeType,scopeObj);
-												expression(word.arguments[1].contence,ScopeTypes.match,word);
-												innerScope = undefined;
-											}],
-											//if|else|while|for|try|do|match
-										],()=>{});
-									}],
-									[[SyntaxTree.type.bracket],()=>{
-										expression(word.contence,word.word=="{"?ScopeTypes.normal:scopeType,word);
-										innerScope = undefined;
-									}],
-									[[SyntaxTree.type.operator],()=>{}],
-									[[SyntaxTree.type.keyword_shortExpression],()=>{}],//'trait shortExp'
-									[[SyntaxTree.type.sepparator],()=>{}]//',' or ';'
-								]);
-								if(word.contence?.length && innerScope){
-									expression(word.contence,innerScope,scopeObj);
-								}
-							}],
-						]);
-					}
-					function getParameters(parameterExp:W,isFunctionParam:bool=false,isActionTrait=false):Parameter[]{
-						//`isFunctionParam` is for '->' and 'let' only. if false, allows for 'pub exp'
-						const baseParameter = parameterExp;
-						function getParameter(parameterExp:WordSymbol,parameterList,parameterPath):mutates<Parameter[]>{
-							parameterExp.wordScopeType = WordScopeType.parameter;
-							//parameterExp: WordSymbol ; parameter(s) expression
-							let parameterType;//:WordSymbol?
-							let isSpreadParameter = false;
-							if(parameterExp.word == "..."){
-								isSpreadParameter = true;
-								parameterExp = parameterExp.arguments[0];
-							}
-							if(parameterExp.subtype == SyntaxTree.subtype.declaration){//'((pub a=int))->'
-								parameterExp = parameterExp.arguments[0];
-							}
-							if(!parameterExp)return;
-							if(parameterExp.subtype == SyntaxTree.subtype.assignment){//for 'let= a' or '(a=b)->'
-								expression([parameterExp],scopeType,scopeObj);
-								parameterType = parameterExp.pattern.arguments[0];
-								parameterExp = parameterExp.pattern.parameter;
-							}
-							if(!parameterExp)return;
-							if(parameterExp.subtype == SyntaxTree.subtype.void){
-								parameterExp.throwError("syntax", "not allowed 'void' expressions in parameters. This rule exists to simplify the transpiler.", e=>Error(e));
-							}
-							if(parameterExp.type == SyntaxTree.type.bracket){
-								let index = 0;
-								for(let i = 0;i < parameterExp.contence.length;i++){
-									let word:WordSymbol = parameterExp.contence[i];
-									if(word.word != ";")index++
-									getParameter(word,parameterList,[...parameterPath,index]);
-								}
-								return;
-							}
-							else if(parameterExp.word == ","){//',' arrays
-								let parameterExp1 = parameterExp;
-								let i = 0;
-								while(parameterExp1.word == ","){//assume 'a,b,c' -> '",":[",":[a,b],c]'
-									getParameter(parameterExp1.arguments[1],parameterList,[...parameterPath,i]);
-									parameterExp1 = parameterExp1.arguments[0];
-									i++;
-								}
-								getParameter(parameterExp1,parameterList,[...parameterPath,i]);
-								return;
-							}
-							else if(parameterExp.type == SyntaxTree.type.label){
-								parameterList.push(new Parameter({
-									name:parameterExp,
-									type:parameterType??undefined,
-									path:parameterPath,
-									rootParameterWord:parameterExp,
-									isSpreadParameter,
-								}));
-								return;
-							}
-							else if(!isFunctionParam && parameterExp instanceof parseIntoOperatorSyntaxTree.FunctionCallWordSymbol){//'a[1][2] = '
-								//note this is only allowed on simple objects, not general types.
-								expression(parameterExp.contence,scopeType,parameterExp);
-								parameterList.push(new Parameter({
-									name:parameterExp,
-									type:parameterType??undefined,
-									path:parameterPath,
-									rootParameterWord:parameterExp,
-									isSpreadParameter,
-								}));
-								return
-							}
-							else if(!isFunctionParam  && parameterExp.word == "."){//'a.b = '
-								let parentObject = parameterExp.arguments[0];
-								let property = parameterExp.arguments[1];
-								if(parameterExp.arguments.length == 0){
-									if(!isActionTrait){
-										parameterExp.throwError("syntax", "expected values e.g.`a.b` on dot operator. note: using `.` on it's own is only allowed in the action traits or `(.).->` `this.->`", e=>Error(e));
 									}
-									return
-								}
-								getParameter(property,parameterList,[...parameterPath,parameterExp]);
-								return;
+									if(exp.isAssignment){
+										key = Key.getKey_expect(exp.args[1]);
+										value = exp.args[0];
+										if(typedKey){
+											typedKey.key = key;
+											key = typedKey;
+										}
+										forEachInTree(value,[...path,key]);
+									}
+									else{
+										assume(exp.isDeclaration && !exp.isAssignment,"':=' must contain ':' and/or '='")(()=>{
+											value = exp.args[0];
+											handleSingleKey(value,typedKey);
+										});
+									}
+								}],
+								[()=>exp instanceof Expression.Bracket,()=>{
+									forEachInTree(exp,[...path,i]);
+								}],
+								[()=>Key.isKey(exp),()=>{
+									handleSingleKey(exp);
+								}],
+							],()=>exp.wordSymbol.throwError("syntax", "invalid syntax inside descructureing pattern. Some accepted patterns include: '[...]', '(...)', 'key', 'a:T=b', 'a:T', 'a=b'",e=>Error(e)));
+						}
+						return;
+					}
+					else if(exp instanceof Expression.Operator && exp.wordSymbol.word == "."){//'.c' in 'a.b.c = d'
+						let propertiesAsExps:Stack&Exp[] = [exp.args[1]];
+						//note: this could instead be done using recursion instead of a loop
+						//assume: exp:Tree
+						let tryNext = forBail(1000);
+						let properties:{key:Key,exp:Expression&'key'}[] = [];//['b','c'] in 'a.b.c'
+						let baseObject:Option<Exp>;//'a' in 'a.b.c = d' can also be infered e.g. 'a:Option = .None,;'
+						!function forEachKey(exp:Exp&"."){
+							assume(exp.args[1],
+								"should be handled in expression-tree generating phase, by the afix system."
+							)(()=>{
+								let key = Key.tryGetKey(exp.args[1]);
+								if(!key)exp.args[1].throwError("syntax", "expected property for right side of dot operator. Try patterns: 'a.b' or 'a.$T'", e=>Error(e));
+								properties.push({key,exp:exp.args[1]});
+							});
+							match(exp.args[0],[
+								[[undefined],()=>{}],
+								[arg=>arg?.wordSymbol?.word == ".",arg=>{
+									forEachKey(arg);
+								}],
+								[arg=>arg?.wordSymbol?.word == "?.",arg=>{
+									unimplemented("does not yet support 'a?.b' syntax. unsure how the '?' operator works in general.");
+								}],
+								[
+									arg=>
+										arg instanceof Expression.Label ||
+										arg instanceof Expression.Value ||
+										arg instanceof Expression.Bracket
+									,
+									arg=>{
+										//end of the property chain
+										baseObject = arg;
+									}
+								],
+								[arg=>arg instanceof Expression.Operator,()=>{
+									;
+								}],
+							]);
+						}(exp);
+						let {key:finalProperty,exp:finalExp} = properties.pop();
+						let propertiesPath:Key[] = properties.map(v=>v.key);
+						{
+							if(finalProperty != undefined){//exp: KeyExp
+								let ref:DestructuredRefData<'.'> = {//in 'a = b'
+									path:[...path],//destructure path for object 'b'
+									exp:finalExp,
+									key:finalProperty,
+									keyPath:propertiesPath,//:Key[]
+									baseObject,//:Exp
+								};
+								refs.push(ref);
 							}
-							//asset parameterExp is invalid for normal parameter values
-							{
-								if(parameterExp.type == SyntaxTree.type.value){
-									parameterExp.throwError("syntax", "invalid parameter, got value literal",e=>Error(e));
-									return;
+							//TODO: make property chain '.' parsing into its own function
+						}
+						return;
+					}
+					else{
+						let key = Key.tryGetKey(exp);
+						assume(exp,"'(:T=a)' , '\\:T=b' / '\\(...):T=b' should be handled by another function. It is not the same as a dec");
+						if(key != undefined){//exp: KeyExp
+							let ref:DestructuredRefData ={
+								path:[...path],
+								exp:exp,
+								key,
+							};
+							refs.push(ref);
+						}
+						else{
+							exp.wordSymbol.throwError("syntax",`invalid syntax in destructure pattern. Got '${exp?.wordSymbol?.word}'`,e=>Error(e));
+						}
+					}
+				}
+				if(!exp){
+					assert.fail("compiler error: '(:T=a)' , '\\:T=b' / '\\(...):T=b' should be handled by another function. It is not the same as a dec");
+				}
+				forEachInTree(exp,[]);
+				loga(refs)
+				return refs;
+			}
+			function dotOperator_getRefs(exp:Expression<".">){//UNUSED
+				assert(exp&&exp.wordSymbol.word == ".", "compiler error: incorrect argument type");
+				const key:Option<Key> = Key.tryFromExp(keyExp);
+				const baseExp:Option<Expression> = exp.args[0];
+				const isInfered = !!baseExp;
+				const keyExp:Option<Expression> = exp.args[1];
+				if(!key)exp.throwError("syntax","expected key",e=>Error(e));
+				const data = {
+					baseExp,
+					isInfered,
+					key,
+				};
+			}
+			function parseExp_getRefs(parent?:Expression,closure:Closure,exp:Expression,keysArePublic:Booly):Mutate<closure,exp>{// adds 
+				assert(!!exp, "expected non-null Expression");
+				assert(exp instanceof Expression, "expected non-null Expression");
+				match(exp.constructor,[
+					[()=>exp instanceof DeclarationAssignmentPattern,()=>{//special syntax: '(a=1;b=2;c=3)' --> '(a:=1;b:=2;c:=3)'
+						const pattern:DeclarationAssignmentPattern&Expression = exp;//: ':='
+						if(isStructBracket(parent)){
+							pattern.isDeclaration = true;
+						}
+						if(pattern.args[0])
+						if(!pattern.destructuredRefs){//assigns destructuredRefs
+							pattern.destructuredRefs = [];
+							let refs:DestructuredRefData[] = getDestructuredKeysFromExp(pattern.args[0]);
+							for(let ref of refs){
+								const {key,path,exp} = ref;
+								let destructuredRef = new DestructuredRef({
+									pattern,
+									path,
+									key,
+									exp,
+								});
+								if(pattern.isDeclaration && keysArePublic){
+									closure.module.publicKeys
 								}
-								else parameterExp.throwError("syntax", "invalid parameter",e=>Error(e));
+								pattern.destructuredRefs.push(destructuredRef);
+							}
+							for(let ref of pattern.destructuredRefs){//note: this should be extracted into it's own function since it is doing multiple things. ; this would make the code more 'clean' the code
+								if(pattern.isDeclaration){
+									closure.containingKeys.add(ref.key);
+								}
 							}
 						}
-						let parameterList = [];//:Word().contence
-						if(parameterExp)getParameter(parameterExp,parameterList,[]);
-						return parameterList;
+					}],
+					[()=>Key.isKey(exp),()=>{
+						exp.key = Key.getKey_expect(exp);
+					}],
+					[()=>exp.wordSymbol.word == "@",()=>{//public ;
+						parseExp_getRefs(exp,closure,exp.args[0],true);
+					}],
+					[()=>exp instanceof Expression.Operator,()=>{
+						const parent = exp;
+						for(let exp of parent.args){
+							if(exp)parseExp_getRefs(parent,closure,exp,keysArePublic)
+						}
+					}],
+					[()=>exp instanceof Expression.Operator,()=>{
+						const parent = exp;
+						for(let exp of parent.args){
+							if(exp)parseExp_getRefs(parent,closure,exp,keysArePublic)
+						}
+					}],
+					[()=>exp instanceof Expression.Bracket,()=>{
+						const parent = exp;
+						for(let exp of parent.contence){
+							if(exp)parseExp_getRefs(parent,closure,exp,keysArePublic)
+						}
+					}],
+					[()=>exp instanceof Expression.Value,()=>{}],
+				]);
+			}
+			function parseExp_Assignment(pattern:Expression&DeclarationAssignmentPattern,closure):Mutates<pattern>{
+				assert(pattern instanceof DeclarationAssignmentPattern);
+				if(!pattern.args[0])return;
+				for(let ref of pattern.destructuredRefs){
+					let lastAssignment:Option<Assignment>;//:Invalid<Option<Assignment>>
+					let declaration:Declaration;//:!Readable & Writeable
+					if(pattern.isDeclaration){
+						declaration = new Delcaration({
+							destructuredRef:ref,
+							currentValue:undefined,
+							firstValue:undefined,
+						});
+						lastAssignment = undefined;
+						closure.labels.set(ref.key,declaration);
+					}else{
+						declaration = closure.labels.get(ref.key,declaration);
+					}
+					//lastAssignment:Valid<Option<Assignment>>
+					//declaration:Option<Declaration> & Readable & !Writable
+					if(pattern.isAssignment){
+						if(!declaration){
+							function searchForLabel(key:Key,closure:Closure):Option<Delcaration>{
+								if(key instanceof Expression) return undefined;//expressions are not ready for parsing
+								if(closure.labels.has(key)) return closure.labels.get(key);
+								else if(closure.parent) return searchForLabel(key,closure.parent);
+								else return undefined;
+							}
+							declaration = searchForLabel(ref.key,closure);//:Option
+							if(!declaration)ref.exp.wordSymbol.throwError("syntax","variable is undeclared",e=>Error(e));
+						}
+						let assignement = new Assignment({
+							lastAssignment:declaration.currentValue ?? null,
+							declaration,
+							destructuredRef:ref,
+						});
+						declaration.currentValue = assignement;
+						declaration.firstValue ??= assignement;
+						let destructuredRef = closure.labels.set(ref.key,assignement);
 					}
 				}
-				addScopeProperties(rootPattern)
-				expression(rootPattern.contence,ScopeTypes.normal,rootPattern);
-				addParents(rootPattern);//BODGED; update parents to account for any mutations to the AST
 			}
-			function findVariable(){}
-			pass2:{//link variables declarations, refs and assignment
-				function expressions(words:W[]&Tree<W>,parent:W){
-					for(let i=0;i<words.length;i++){
-						const word:(WordSymbol|null) = words[i];
-						if(word===null){continue}//handle `= 2` -> `'='[null,'2']`
-						match(word.wordScopeType,[
-							[[WordScopeType.expression,undefined],()=>{
-								if(word.type == SyntaxTree.type.label){//'a'
-									let ref:VariableRef = word.pattern.value;
-									assert(ref instanceof VariableRef);
-								}
-								else if(word.type == SyntaxTree.type.parameterExp && word.subtype == SyntaxTree.subtype.assignment){//'a=b'
-									
-								}
-								if(word.contence){
-									expressions(word.contence,word);
-								}
-							}],
-							[[WordScopeType.type],()=>{
-								
-							}],
-							[[WordScopeType.parameter],()=>{return}],
-						]);
+			class Module{
+				publicKeys:Key[] = [];
+				exp:Option<Expression>;//:'mod'
+			}
+			function parseExps(parent?:Expression,parentClosure?:Closure,exps:Expression[]):Mutates<exps>{
+				let hasFunctionSigniture = false;
+				if(exps[0] instanceof DeclarationAssignmentPattern)block:{//'(:= )' and '\:='
+					if(!parent)break block;
+					assert(
+						parent instanceof GlobalExp || parent instanceof Expression.Bracket || parent instanceof ModulePattern || parent instanceof FunctionPattern,
+						"expected to have thown an error in the expression syntax tree creation phase."
+					);
+					if(parent instanceof FunctionPattern){
+						if(!exps[0].args[0] && !exps[0].typeArg)return;//'\= ...' and '\:= ...' is the same as '\...'
+						parent.signitureExp = exps[0];
 					}
+					parent.signitureExp = exps[0];
 				}
-				expressions(rootPattern.contence,undefined)
+				let closure = new Closure({parent:parentClosure,module:parentClosure??new Module()});//:Map(Symbol -> declaration exp)
+				for(let exp of exps){
+					parseExp_getRefs(parent,closure,exp);
+				}
+				for(let exp of exps){
+					if(exp instanceof DeclarationAssignmentPattern)parseExp_Assignment(exp,closure);
+				}
 			}
-		}
-		{//handle '[]' special syntax e.g. '[a = 2]' -> '[pub let a = 2]'
-		}
-		{//get variables
-			function expressions(wordSymbol,parent){//() or {}
-				;
-			}
+			return parseExps(null,undefined,rootPattern);
 		}
 	}
 //----
@@ -1602,8 +1624,11 @@ function printTree(abstractSyntaxTree){//a TEST function for debugging
 		len++;
 		return "\t".repeat(i)+(!a?a:
 			a.wordSymbol
-			+(a.contence?"\n"+a.contence.map(v=>forEach(v,i+1,a)).join((i-=1,"\n")):"")
-			+(a.args?"\n"+a.args.map(v=>forEach(v,i+1,a)).join("\n"):"")
+			+(a.toTree?(a.toTree().length>0?"\n":"")+a.toTree().map(v=>forEach(v,i+1,a)).join("\n")
+				:(a.args?"\n"+a.args.map(v=>forEach(v,i+1,a)).join("\n"):"")
+			)
+			//+(a.contence?"\n"+a.contence.map(v=>forEach(v,i+1,a)).join((i-=1,"\n")):"")
+			//+(a.args?"\n"+a.args.map(v=>forEach(v,i+1,a)).join("\n"):"")
 		);
 	})({args:abstractSyntaxTree},0);
 	return string + "\n" + len;
@@ -1616,8 +1641,8 @@ function compile(text,throwError,fileName="main file"){
 		class RootPattern extends WordSymbol{}
 		const rootPattern = new RootPattern({contence:syntaxTree});
 		const abstractSyntaxTree:Expression[] = parseIntoOperatorSyntaxTree(rootPattern);//:mutates rootPattern
+		parseAST(abstractSyntaxTree);//:mutates rootPattern
 		//assert(abstractSyntaxTree == rootPattern);
-		//parseAST(rootPattern);//:mutates rootPattern
 		loga(printTree(abstractSyntaxTree));
 	}
 	catch(error){
@@ -1632,6 +1657,6 @@ let {data:a,fileName} = (()=>{
 	const data = getFile_expect(fileName);
 	return {fileName,data};
 })();
-//a="Coords := \(*$$:;#x:=0;#y:=0);";
+a="a.b := 2;Coords := \(*$$:;#x:=0;#y:=0);";
 if(1)compile(a??"");
 else try{compile(a)}catch(e){console.error(e+"")};
