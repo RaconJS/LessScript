@@ -9,6 +9,11 @@
 	\##.<,0<:a;
 	health:Int=10;
 	$:=nodes=a;
+	obj:=(a=(b=2));
+	(a=(b=v)):=(a=(b=2));
+	v:=(a=(b=2)).a.b;
+	(b=v):=(a=(b=2)).a;
+	(a.b=v):=(a=(b=2));
 };
 fizbuz := \
 	for {

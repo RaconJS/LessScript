@@ -209,12 +209,17 @@
 			a.b=c//assigns property similar to Javascript {mutating referenced object 'a'} ; if key 'b' is not on 'a's type and 'a's struct is local, then it is added to the struct and object.
 				//auto adding properties cannot be done, if the object's type is well defined, or if the object's type is private to this scope.
 			a.b:=c//
+			{exps}.key = exp;
 			destructure=exp
 			destructure:=exp
 			destructure:type=exp
 			//destructure:
-				(params)
-				[params]
+				short_exp //'a.b.c = exp' == 'c = {exp}.a.b.c'
+				(destructures)
+				[destructures]
+				//destructures
+					destructure
+					destructures destructure
 				//note: can be recursive, e.g. [a;[b;(c;d)]] = [1;[2;(c=3;d=4)]];
 			//declaring types
 				T::=U;

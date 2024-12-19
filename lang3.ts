@@ -582,7 +582,7 @@ const fs = Deno;//require("fs");
 					"{"  :{afix:OperatorData.AfixType.postfix},
 				},
 				{
-					","    :{afix:OperatorData.AfixType.infix,optionalArg:[0,1]},
+					","    :{afix:OperatorData.AfixType.infix,optionalArg:[0,1],isInverseBracketing:true},
 					",\x00":{afix:OperatorData.AfixType.postfix},
 					":>"   :{afix:OperatorData.AfixType.infix},
 					"<:"   :{afix:OperatorData.AfixType.infix},
@@ -1122,6 +1122,7 @@ const fs = Deno;//require("fs");
 			wordSymbols:[WordSymbol?,WordSymbol?];
 			typeArg?:Expression;
 			args:[Expression?,Expression?];
+			destructuredRefs:DestructuredRef[];
 			toTree(){
 				return [this.args[0],this.typeArg,this.args[1]];
 			}
@@ -1163,7 +1164,7 @@ const fs = Deno;//require("fs");
 			constructor(data={}){super(data);Object.assign(this,data)}
 			parameters?:Expression;
 			returnType?:Expression;
-			signitureExp?:Expression = null;
+			signitureExp?:Expression & DeclarationAssignmentPattern = undefined;
 			toTree(){
 				return [this.signitureExp,this.args[1]];
 			}
@@ -1185,12 +1186,14 @@ const fs = Deno;//require("fs");
 				for(let i = 0; i < exps.length; i++){
 					let exp:Option<Expression> = exps[i];
 					if(!exp)continue;
+					if(exp)forEach(exp.toTree());
 					let pattern:Option<Expression> = DeclarationAssignmentPattern.tryFromExp(exp);
-					if(!pattern && exp.wordSymbol.word == "\\")pattern = new FunctionPattern(exp);
+					if(!pattern && exp.wordSymbol.word == "\\"){
+						pattern = new FunctionPattern(exp);
+					}
 					if(pattern){
 						exps[i] = exp = pattern;
 					}
-					if(exp)forEach(exp.toTree());
 				}
 			}
 			forEach(rootPattern);
@@ -1296,64 +1299,8 @@ const fs = Deno;//require("fs");
 			}
 			function getDestructuredKeysFromExp(exp):Pure&DestructuredRefData[]|Err<syntax>{//'[a;b] = array;' function arguments and arrays.
 				let refs:DestructuredRefData[] = [];
-				function forEachInTree(exp:Expression,path:owned<(Index|String|TypedKey)[]>,isAssignment,isDeclaration){
-					if(exp instanceof Expression.Bracket){
-						let pathIndex = path.length;
-						let pathI = 0;
-						let bracketExp = exp;
-						function handleSingleKey(exp,typedKey){//handles 'a' , '(...)' , 'a:T'
-							let key;
-							if(isStructBracket(bracketExp)){
-								key = Key.getKey_expect(exp);
-							}
-							else{
-								key = pathI;
-							}
-							if(typedKey){
-								typedKey.key = key;
-								key = typedKey;
-							}
-							forEachInTree(exp,[...path,key]);
-						}
-						const perentExp = exp;
-						for(let i = 0; i < perentExp.contence.length; i++){
-							let exp = perentExp.contence[i];
-							match(exp,[
-								[()=>exp instanceof DeclarationAssignmentPattern,()=>{//'(b=a):=(a=2);assert b == 2'
-									let key,value,typedKey;
-									if(exp.isDeclaration){
-										typedKey = new TypedKey({
-											type:exp[Key.KeySymbol],
-											key:undefined,//defined later
-										});
-									}
-									if(exp.isAssignment){
-										key = Key.getKey_expect(exp.args[1]);
-										value = exp.args[0];
-										if(typedKey){
-											typedKey.key = key;
-											key = typedKey;
-										}
-										forEachInTree(value,[...path,key]);
-									}
-									else{
-										assume(exp.isDeclaration && !exp.isAssignment,"':=' must contain ':' and/or '='")(()=>{
-											value = exp.args[0];
-											handleSingleKey(value,typedKey);
-										});
-									}
-								}],
-								[()=>exp instanceof Expression.Bracket,()=>{
-									forEachInTree(exp,[...path,i]);
-								}],
-								[()=>Key.isKey(exp),()=>{
-									handleSingleKey(exp);
-								}],
-							],()=>exp.wordSymbol.throwError("syntax", "invalid syntax inside descructureing pattern. Some accepted patterns include: '[...]', '(...)', 'key', 'a:T=b', 'a:T', 'a=b'",e=>Error(e)));
-						}
-						return;
-					}
-					else if(exp instanceof Expression.Operator && exp.wordSymbol.word == "."){//'.c' in 'a.b.c = d'
+				function forEachInTree(exp:Expression,path:owned<(Index|String|TypedKey)[]>,expectDestructable = false){
+					function getRefFromDotOperatorChain(exp:Expression<".">,path:Key[]):Pure & DestructuredRefData{
 						let propertiesAsExps:Stack&Exp[] = [exp.args[1]];
 						//note: this could instead be done using recursion instead of a loop
 						//assume: exp:Tree
@@ -1395,18 +1342,87 @@ const fs = Deno;//require("fs");
 						let {key:finalProperty,exp:finalExp} = properties.pop();
 						let propertiesPath:Key[] = properties.map(v=>v.key);
 						{
+							let baseKey = Key.tryGetKey(baseObject);
+							if(!baseKey)baseObject.throwError("syntax","expected a key");
 							if(finalProperty != undefined){//exp: KeyExp
-								let ref:DestructuredRefData<'.'> = {//in 'a = b'
-									path:[...path],//destructure path for object 'b'
+								let ref:DestructuredRefData = {//in 'a = b'
+									path:[...path,baseObject,...propertiesPath],//destructure path for object 'b'
 									exp:finalExp,
 									key:finalProperty,
-									keyPath:propertiesPath,//:Key[]
-									baseObject,//:Exp
 								};
-								refs.push(ref);
+								return ref;
 							}
-							//TODO: make property chain '.' parsing into its own function
 						}
+					}
+					const isDotOperator = (exp:Expression):Bool => exp instanceof Expression.Operator && exp.wordSymbol.word == ".";
+					if(exp instanceof Expression.Bracket){
+						const bracketExp = exp;
+						if(expectDestructable && bracketExp.wordSymbol == "{"){
+							bracketExp.throwError("syntax","found pattern '{ ... } := ...'. cannot destructure code blocks '{ ... }'. Try using '[ ... ]' or '( ... )'",e=>Error(e));
+						}
+						let pathIndex = path.length;
+						let pathI = 0;
+						function handleSingleKey(exp,typedKey,expectDestructable = false){//handles 'a' , '(...)' , 'a:T' ; handles patterns directly inside brackets or from ':=' pattern
+							let key;
+							if(isStructBracket(bracketExp)){
+								key = Key.getKey_expect(exp);
+							}
+							else{
+								key = pathI;
+							}
+							if(typedKey){
+								typedKey.key = key;
+								key = typedKey;
+							}
+							forEachInTree(exp,[...path,key],expectDestructable);
+						}
+						const perentExp = exp;
+						for(let i = 0; i < perentExp.contence.length; i++){
+							let exp = perentExp.contence[i];
+							match(exp,[
+								[()=>exp instanceof DeclarationAssignmentPattern,()=>{//'b:;(a=b):=(a=2);assert b == 2'
+									let key,value,typedKey;
+									if(exp.isDeclaration){
+										typedKey = new TypedKey({
+											type:exp[Key.KeySymbol],
+											key:undefined,//defined later
+										});
+									}
+									if(exp.isAssignment){
+										let path1 = path;
+										if(isDotOperator(exp.args[0])){
+											const ref:Owned&DestructuredRefData = getRefFromDotOperatorChain(exp,path);
+											key = ref.path.pop();
+											path1 = ref.path;
+										}
+										else key = Key.getKey_expect(exp.args[0]);
+										value = exp.args[1];
+										if(typedKey){
+											typedKey.key = key;
+											key = typedKey;
+										}
+										forEachInTree(value,[...path1,key],true);
+									}
+									else{
+										assume(exp.isDeclaration && !exp.isAssignment,"':=' must contain ':' and/or '='")(()=>{
+											value = exp.args[1];
+											handleSingleKey(value,typedKey,true);
+										});
+									}
+								}],
+								[()=>exp instanceof Expression.Bracket,()=>{
+									forEachInTree(exp,[...path,i]);
+								}],
+								[()=>Key.isKey(exp),()=>{
+									handleSingleKey(exp);
+								}],
+							],()=>exp.wordSymbol.throwError("syntax", "invalid syntax inside descructureing pattern. Some accepted patterns include: '[...]', '(...)', 'key', 'a:T=b', 'a:T', 'a=b'",e=>Error(e)));
+						}
+						return;
+					}
+					else if(isDotOperator(exp)){//'.c' in 'a.b.c = d'
+						let ref:DestructuredRefData = getRefFromDotOperatorChain(exp,path);
+						refs.push(ref);
 						return;
 					}
 					else{
@@ -1428,8 +1444,7 @@ const fs = Deno;//require("fs");
 				if(!exp){
 					assert.fail("compiler error: '(:T=a)' , '\\:T=b' / '\\(...):T=b' should be handled by another function. It is not the same as a dec");
 				}
-				forEachInTree(exp,[]);
-				loga(refs)
+				forEachInTree(exp,[],true);
 				return refs;
 			}
 			function dotOperator_getRefs(exp:Expression<".">){//UNUSED
@@ -1456,7 +1471,7 @@ const fs = Deno;//require("fs");
 						}
 						if(pattern.args[0])
 						if(!pattern.destructuredRefs){//assigns destructuredRefs
-							pattern.destructuredRefs = [];
+							pattern.destructuredRefs = [];//:DestructuredRef[]
 							let refs:DestructuredRefData[] = getDestructuredKeysFromExp(pattern.args[0]);
 							for(let ref of refs){
 								const {key,path,exp} = ref;
@@ -1467,6 +1482,7 @@ const fs = Deno;//require("fs");
 									exp,
 								});
 								if(pattern.isDeclaration && keysArePublic){
+									unimplemented();
 									closure.module.publicKeys
 								}
 								pattern.destructuredRefs.push(destructuredRef);
@@ -1546,6 +1562,34 @@ const fs = Deno;//require("fs");
 					}
 				}
 			}
+			function parseExp_functionCalls(parent?:Expression,exp:Expression,exps:Expression[]):Mutates<exp>{
+				assume(exp instanceof Expression,exp);
+				function handler(exp:Expression){
+					if(!exp.wordSymbol.word.match(/[:|]>|<[:|]|[,({]/))return;//checks for function call symbols
+					match(exp.wordSymbol,[
+						[wordSymbol=>wordSymbol.subtype == SyntaxTree.subtype.pipeline,()=>{
+							//TODO
+						}],
+						[wordSymbol=>wordSymbol.word == ",",()=>{
+							//TODO
+						}],
+						[()=>exp instanceof Expression.Bracket,()=>{
+							//TODO
+						}],
+					]);
+				}
+				!function forEachInTree(parent?:Expression,exp?:Expression){
+					if(!exp)return;
+					handler(exp);
+					assert(exp.toTree);
+					let contence:Expression[] = exp.toTree();
+					assert(contence instanceof Array,`If contence is null then ammend this code to accept null --> {no contence}. got '${contence}'`);
+					for(let expItem:Option<Expression> of contence){
+						assert(!expItem || expItem instanceof Expression);
+						forEachInTree(exp,expItem);
+					}
+				}(parent,exp);
+			}
 			class Module{
 				publicKeys:Key[] = [];
 				exp:Option<Expression>;//:'mod'
@@ -1567,6 +1611,7 @@ const fs = Deno;//require("fs");
 				let closure = new Closure({parent:parentClosure,module:parentClosure??new Module()});//:Map(Symbol -> declaration exp)
 				for(let exp of exps){
 					parseExp_getRefs(parent,closure,exp);
+					parseExp_functionCalls(parent,exp,exps);
 				}
 				for(let exp of exps){
 					if(exp instanceof DeclarationAssignmentPattern)parseExp_Assignment(exp,closure);
@@ -1657,6 +1702,6 @@ let {data:a,fileName} = (()=>{
 	const data = getFile_expect(fileName);
 	return {fileName,data};
 })();
-a="a.b := 2;Coords := \(*$$:;#x:=0;#y:=0);";
+//a="a.b := 2;Coords := \(*$$:;#x:=0;#y:=0);";
 if(1)compile(a??"");
 else try{compile(a)}catch(e){console.error(e+"")};
