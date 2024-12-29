@@ -1,6 +1,8 @@
+//TODO: work on 1634 `function getDeclarationFromAutoparameter` ; implementing '##' '#@' '#?' get parameters for '\', 'if', 'else' etc..
+	//1263 build type class for the language's type system
 //name suggetion: quad, (the Quick Unreadable And Dirty programming language)
 //TODO: add code to support '::=' making '::' have the same syntax as ':'
-const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?"|[\@\$\#]\*|(?:\?&|&\?|\?\|)|\.\.=?|\.\.\.|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|=>|->|[><!=]=?|[+\-*%&|^~]{1,2}|#[#@?]|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:0[box][_0-9A-Fa-f]+|[0-9_](?:\.(?:(?!\.)|(?:[0-9_]+)))?)\b|\.|\b\w+\b|\S/g;
+const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?"|[\@\$\#]\*|(?:\?&|&\?|\?\|)|\.\.=?|\.\.\.|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|!!!|=>|->|[><!=]=?|[+\-*%&|^~]{1,2}|#[#@?]|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:0[box][_0-9A-Fa-f]+|[0-9_](?:\.(?:(?!\.)|(?:[0-9_]+)))?)\b|\.|\b\w+\b|\S/g;
 {//old code OBSILETE
 	function loga(...args){console.log(...args);}
 	let code = getFile("testCode.lang3");
@@ -555,6 +557,7 @@ const fs = Deno;//require("fs");
 			intoOperatorProceedence([//:{[string]:OperatorData}[] ; note: '\x00's are ignored to allow for duplicate entries with the same preceedence
 				{
 					"..."  :{afix:OperatorData.AfixType.nofix},
+					"!!!"  :{afix:OperatorData.AfixType.nofix},
 					"$$"   :{afix:OperatorData.AfixType.nofix},
 					"$"    :{afix:OperatorData.AfixType.nofix},
 					"##"   :{afix:OperatorData.AfixType.nofix},
@@ -1047,8 +1050,10 @@ const fs = Deno;//require("fs");
 													return;
 												}
 												if(selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration && j == 1 && exps[i+1]?.wordSymbol?.subtype != SyntaxTree.subtype.assignment){//does both arguments of ':' before the '=' to allow 'a:T=b' --> '(a:T)=b' and prevent 'a:(T=b)'
-													collectIntoTree(i+1,selfExp.operatorData.proceedence[1],exps,true);
+													collectIntoTree(i+1,selfExp.operatorData.proceedence[1],exps,true);//:mutates owner object of item argExp
+													argExp = exps[i + argIndex];//update
 												}
+												assert(argExp == exps[i + argIndex]);
 											}
 											if((argExp.operatorData?.proceedence?.[1-j] ?? Expression.defaultProceedence) + (!selfExp.operatorData.isInverseBracketing && j) <= argProceendence){
 												if(j == 1 && selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration && argExp.wordSymbol.subtype == SyntaxTree.subtype.assignment)return;//prevents 'a:=b' -> 'a:(=b)'
@@ -1162,11 +1167,13 @@ const fs = Deno;//require("fs");
 		}
 		class FunctionPattern extends Expression.Operator{//'\exp'
 			constructor(data={}){super(data);Object.assign(this,data)}
-			parameters?:Expression;
-			returnType?:Expression;
+			parameters:Declaration[] = [];
+			parametersExp?:Expression & Item<signitureExp>;
+			returnTypeExp?:Expression & Item<signitureExp>;
+			bodyExp?:Expression & Item<signitureExp>;
 			signitureExp?:Expression & DeclarationAssignmentPattern = undefined;
 			toTree(){
-				return [this.signitureExp,this.args[1]];
+				return [this.args[1]];
 			}
 		};
 		class ModulePattern extends Expression{//'mod exp'
@@ -1190,6 +1197,12 @@ const fs = Deno;//require("fs");
 					let pattern:Option<Expression> = DeclarationAssignmentPattern.tryFromExp(exp);
 					if(!pattern && exp.wordSymbol.word == "\\"){
 						pattern = new FunctionPattern(exp);
+						if(pattern.args[1] instanceof DeclarationAssignmentPattern){
+							pattern.signitureExp = pattern.args[1];
+							pattern.parametersExp = pattern.signitureExp.args[0];
+							pattern.typeExp = pattern.signitureExp.typeArg;
+							pattern.bodyExp = pattern.signitureExp.args[1];
+						}
 					}
 					if(pattern){
 						exps[i] = exp = pattern;
@@ -1244,6 +1257,10 @@ const fs = Deno;//require("fs");
 				constructor(data={}){Object.assign(this,data)}
 				destructuredRef:DestructuredRef;
 				currentValue:Expression;
+				type:Option<Type>;//if no type provided 
+			}
+			class Type{
+
 			}
 			class Assignment{
 				constructor(data={}){Object.assign(this,data)}
@@ -1271,7 +1288,7 @@ const fs = Deno;//require("fs");
 				constructor(data={}){Object.assign(this,data)}
 				key:String|KeyExp;
 				path:DestructurePath[];
-				pattern:Expression&DeclarationAssignmentPattern;//
+				pattern:Expression&(DeclarationAssignmentPattern|(Expression<"#">|"#@"|Expression<"#?">|etc___));//
 				exp:Expression;//'a' in 'a=b'
 			}
 			type Key = String|KeyExp;
@@ -1590,6 +1607,93 @@ const fs = Deno;//require("fs");
 					}
 				}(parent,exp);
 			}
+			function parseExp_getParameters(parent?:Expression,exp:Expression){
+				!function forEachInTree(exp:Expression,parentFunction?:Expression,parentStatement?:Expression,parentCondision?:Expression){//:(...Exp[])->mutates arguments
+					//for '#name', '#@name', '#?name'
+					assert(exp);
+					match(exp.constructor,[
+						[[FunctionPattern],()=>{//'\'
+							if(exp.parametersExp)forEachInTree(exp.parametersExp,exp,parentStatement,parentCondision);
+							if(exp.returnTypeExp)forEachInTree(exp.returnTypeExp,exp,parentStatement,parentCondision);
+							if(exp.bodyExp)forEachInTree(exp.bodyExp,exp,parentStatement,parentCondision);
+						}],
+						[()=>["#", "##", "#@", "#?", "#!"].includes(exp.wordSymbol.word),()=>{
+							const condisionalKeywords = ["if", "match", ""];
+							const argumentStatements = [];
+							match(exp.wordSymbol.word,[
+									[["#"],()=>{//'#name' named is required for the parameter
+										if(!exp.args[1])exp.wordSymbol.throwError("syntax", `missing parameter name. Try using the '${exp.wordSymbol.word}name' pattern.`,e=>Error(e));
+									}],
+									[["##"],()=>{
+										assert(!exp.args[1],"Cannot have name parameter with '##'. It is only a 'nofix' operator.")
+									}],
+									[["#@", "#?", "#!"],()=>{}],
+								]);
+							match(exp.wordSymbol.word,[
+								[["#", "##"],()=>{//'#name' named is required for the parameter
+									function getDeclarationFromAutoparameter(exp:Expression<"#"|"##"|etc___>){
+										if(!parentFunction)exp.wordSymbol.throwError("reference", `parameter ${exp.wordSymbol.word+exp.args[1].wordSymbol.word} is not inside a argument possessing statement. Can be used inside: 'for', 'while', 'else', 'do', 'await'`,e=>Error(e));//TODO update the list of keyword statements allowed in the error message
+										let key:Option<Key> & Enum<_<"#">&Some<Key> | _<"##">&None>;
+										if(exp.wordSymbol.word == "#"){
+											assert(exp.args[1]);
+											key = Key.getKey_expect(exp.args[1]);
+										}else{
+											assert(exp.wordSymbol.word == "##");
+											key = undefined;
+										}
+										//note: using a Delcaration object may be redundant
+										const data = {
+											key:key,
+											pattern:exp,
+											keyExp:exp.args[1]??exp,
+											type:undefined,
+											currentValue:undefined,
+											path:[],
+										};
+										const declaration = new Delcaration({
+											destructuredRef:new DestructuredRef({
+												destructuredRef:data.key,
+												path:data.path,
+												pattern:data.exp,
+												exp:data.key,
+											}),
+											currentValue:undefined,
+										});
+									}
+									parentFunction.autoParameters.push(exp);//UNFINISHED
+								}],
+								[["#@"],()=>{//'#name' named is required for the parameter
+									if(!parentStatement)exp.wordSymbol.throwError("reference", `argument ${exp.wordSymbol.word+(exp.args[1]?.wordSymbol?.word??"")} is not inside a conditional expression`,e=>Error(e));
+								}],
+								[["#?"],()=>{//'#name' named is required for the parameter
+									if(!parentFunction)exp.wordSymbol.throwError("reference", `parameter ${exp.wordSymbol.word+(exp.args[1]?.wordSymbol?.word??"")} is not inside a function. Try adding '\\' or removing the '#'.`,e=>Error(e));
+								}],[["#!"],()=>{//'#name' named is required for the parameter
+									unimplemented("'#!' is not implemented yet");
+								}],
+							]);
+						}],
+					],()=>{
+						const contence:Expression[] = exp.toTree();
+						for(let expItem:Option<Expression> of contence){
+							if(!expItem)continue;
+							forEachInTree(expItem,parentFunction,parentStatement,parentCondision);
+						}
+					});
+				}(exp,undefined,undefined,undefined);
+			}
+			function parseExp_getValue(){//:UNUSED
+				function handler(){
+					unimplemented();
+				}
+				!function forEachInTree(exp?:Expression){
+					if(!exp)return;
+					handler(exp);
+					let contence:Expression[] = exp.toTree();
+					for(let expItem of contence){
+						forEachInTree(exp);
+					}
+				}()
+			}
 			class Module{
 				publicKeys:Key[] = [];
 				exp:Option<Expression>;//:'mod'
@@ -1610,8 +1714,13 @@ const fs = Deno;//require("fs");
 				}
 				let closure = new Closure({parent:parentClosure,module:parentClosure??new Module()});//:Map(Symbol -> declaration exp)
 				for(let exp of exps){
-					parseExp_getRefs(parent,closure,exp);
-					parseExp_functionCalls(parent,exp,exps);
+					{//the order of these function calls does not matter
+						parseExp_getRefs(parent,closure,exp);
+						parseExp_getParameters(parent,exp);
+					}
+					{//mutates the exp tree structure
+						parseExp_functionCalls(parent,exp,exps);
+					};
 				}
 				for(let exp of exps){
 					if(exp instanceof DeclarationAssignmentPattern)parseExp_Assignment(exp,closure);

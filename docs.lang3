@@ -100,16 +100,18 @@
 			{ ... }:short_type_exp,//for asserting types for parts of expressions
 				//e.g.
 				print{"1 + 2 = " + {:Float; 1 + 2}:Float¬.$String}:{};
-		//function
+		//function:
 			\exp
 			//typing
 				\function_params:type=exp
 				\function_params:=exp
 				\:type=exp
 				//function_params:
-					{params}
-					(params)
-			//public parameters
+					{destructures}
+					(destructures)
+					destructures
+					key
+			//named parameters (aka public parameters since the parameter symbols are public)
 				//can put '@' behind a parameter key to allow for named arguments
 				//e.g.
 					\(a;b)=a+b;
@@ -119,6 +121,14 @@
 					bar:=\[@#a;##];
 					assert bar(a:=2;3) == [3;2];
 				//public arguments can only be accessed
+				//REVISION:
+					//using 'key#' for named parameters
+					//using 'key# exp' for named arguments
+					foo:=\a#+b#;
+					foo:=\(a#:F;$F):F=a+$F;
+					foo(2;a#2);
+					//note: in '#name' '#@name' 'etc...' parameter patterns there cannot be a space between the '#' and the name. this makes ( 'a #a' --> error ) different from ( 'a# a' --> uses named argument)
+						//'a#b' == 'a# b'
 		//enum
 			Enum (
 				String;
@@ -217,10 +227,16 @@
 				short_exp //'a.b.c = exp' == 'c = {exp}.a.b.c'
 				(destructures)
 				[destructures]
-				//destructures
+				//destructures:
 					destructure
 					destructures destructure
 				//note: can be recursive, e.g. [a;[b;(c;d)]] = [1;[2;(c=3;d=4)]];
+				//e.g.
+					\(obj):=(
+						(a;[b;x.y.z=(c;w=d)]) := obj;
+						//or can also put in types
+						(a;[b;x.y.z:(c:;w:)=(c;w=d)]) : (a:;[_;(x:(y:(z:(c:;w:(d)))))]) = obj;
+					);
 			//declaring types
 				T::=U;
 				key::type_exp=type_exp;
@@ -237,8 +253,8 @@
 				(type_exps)//struct
 				[type_exps]//array
 				\normal_exp//enters normal typeing ; this is done since types are functions
-		//params_exp
-			//parameter_exp
+		//params_exp:
+			//parameter_exp:
 				key
 				key:type
 				key=default
@@ -334,10 +350,10 @@
 				defer
 					//defers the running of a statement till the end of its block
 					//similar to the '(:=exp; )' pattern ; 'blocks' include statements like 'if' 'for', functions (i.e. '\'), brackets '()', etc...
-			//assertions
+			//assertions:
 				assert assert_condision_exp;
 				assert assert_condision_exp => exp;
-				//assert_condision_exp
+				//assert_condision_exp:
 					exp
 					exp is type_exp//returns true the type of 'exp' equals 'type_exp'
 					exp is//returns true if all property parts of 'exp' involve existing keys; can be used for checking keys on objects
@@ -436,6 +452,75 @@
 		(a=b=foo)=obj;
 		four:;five:;six:;
 		[four;five;six] = obj;
+//learning:
+	//hello world
+		print,"hello world";
+	
+	//uses
+		function,argument
+		//syntax
+	//variables
+		a:;//declaration
+		a = 2;//assignment
+		b := 2;//declaration and assignmnt
+		c :I= 5;//typed variable declaration and assignment ; types are infered othersise. 'I' is short for the 'Int' type
+		[a;b] = [5;6];//destructuring assignment
+	//data structures
+		//arrays and structs are supported
+		//arrays use '[]' brackets.
+		//structs use '()' brackets.
+		//'{}' are for code blocks, similar to rust, that return their last statement.
+			//"erm actually" note: the '{:= ... }' pattern can be used to run the first line last and return that.
+				//however, this simply reorders the code so would still count as the last line.
+		//arrays elements, just like all code, are separated by ';'s.
+		array : *I = [1;2;3];
+		array.push,10;
+		object : (...) = (a=1;b=2;3);// structs can contain tuples aswell ; in a struct 
+		assert object.a == 1;
+		assert object[0] == 3;
+		assert array[1] == 2;
+	//functions
+		//supports unnamed parameters, reducing one of the 3 hardest problems in computer science.
+		addTwoNumbers := \##+##;//terse unnamed function
+		multiplyTwoNumbers := \(a:F;b:F):F= a * b;//a verbose function
+		//what if I want typed but I do not want to name my variables?
+			power := \:F= ##:F * ##:F;
+			//or if we just wanted to have names but only want to write them once
+			power = \#a * #b;
+	//unnaming variables
+		//there are only 2 hard problems in computer science, cashe invalidation and naming things
+		//we have already seen how parameters need not be named but variables can also
+		//types can be used to name variables
+		$I := 2;//'$I' translates to "the integer" in english
+		//and fields in structs
+		obj := ($I = 2; $S = "ABC"; $F = 3.14);
+		assert obj.$I == 2;
+	//type system
+		//grammer wise: types are treated as static functions and vise-verser.
+		//they are evaluated at compile time.
+		//we can use '::=' to declare a variable as a type
+		Animal ::= (
+			legs:I;
+			speek:\;
+			name:S;
+		);
+		Cat ::Animal= (
+			legs:I=4;
+			speek:=\print,"meow";
+			name:S;
+		);
+		Car := \(wheels:I=##; model:S=##);
+		car1 :Car= Car(4;"car model 1");
+		//note type checking is duck typed by defualt.
+		//Any object with the same named properties would be seen as the same type.
+		//To fix this was can use the unique object type operator '$$'
+		UniqueInt := \$$##:I;
+		assert UniqueInt,5 == 5;
+		assert UniqueInt,5 !is I;//we use '!is' to compair a value to a type
+		//now we get in to the complex world of symbol-ception.
+			//a "UniqueInt" contains the properties '$I' since it contains it.
+				//this is so type conversions can be made.
+				asInt = \{##:UniqueInt}.$I == 5
 //examples:
 	{//example
 		mod{
@@ -500,7 +585,7 @@
 			await>=foo3,#@;
 			await>=foo4,#@;
 			await>=print,"done";
-		}
+		};
 		church_numeral_five := \f:=\f,f,f,f,f,#x;
 	};
 	{
@@ -522,7 +607,7 @@
 	};
 	{
 		normal_distribution := mod {
-			\##.<\##[\1000|>(\##.<,0<:\##+1F.random)]+=1;
+			\##.<,\##[\1000|>(\##.<,0<:\##+1F.random)]+=1;
 		};
 	};
 	{

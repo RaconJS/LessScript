@@ -42,6 +42,7 @@ contexts:
       scope: invalid.illegal.stray-bracket-end.lang
     - include: mainContext
   mainContext:
+    - meta_scope: source.lang
     - include: base_basic
     #keywords
     - match: '\s*{{match_keywords}}'
