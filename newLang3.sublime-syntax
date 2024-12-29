@@ -64,6 +64,7 @@ contexts:
           Option|Result|
           Value|
           Fn|Type|
+          Lazy|
           File(?:\s*\.\s*(?:Src|Text|Raw|Bin|Exe))?
           Symbol)\b
       '
@@ -100,9 +101,15 @@ contexts:
     #value
     - match: '{{number}}|\b(?:true|false|null|undefined|any|NaN|Infinity)\b'
       scope: constant.numeric.lang
-    - match: '"'
+    - match: 'l"' # 'literal string'
       push:
         - - include: base_basic_string
+          - meta_scope: string.quoted.double.lang
+          - match: '"'
+            pop: true
+    - match: '"' #formated string
+      push:
+        - - include: format_string
           - meta_scope: string.quoted.double.lang
           - match: '"'
             pop: true
@@ -115,7 +122,7 @@ contexts:
       scope: string.quoted.double.lang
       push: multi_line_string
     #function calls
-    - match: '{{label}}\s*(?=[\(\[\{]|<\||,)|(?<=\|>)\s*{{label}}'
+    - match: '{{label}}\s*(?=[\(\[]|<\||,)|(?<=\|>)\s*{{label}}'
       scope: variable.function
     #variables
     - match: '{{label}}'
@@ -156,6 +163,15 @@ contexts:
             pop: true
   base_basic_string:
     - meta_scope: string.quoted.double.lang
+    - match: '{{string_special}}'
+      scope: constant.character.escape.lang
+  format_string:
+    - meta_scope: string.quoted.double.lang
+    - match: '{'
+      scope: punctuation.section.group.begin.lang
+      push:
+        - - meta_scope: source.lang
+          - include: mainContext
     - match: '{{string_special}}'
       scope: constant.character.escape.lang
   multi_line_string:

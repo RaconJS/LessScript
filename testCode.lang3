@@ -1,165 +1,88 @@
-//##;
-//#@;
-//#?;
-//#!>;
-{
-	a:=2;
-	a+=2;
-	:a=b;
-	\##.<,0<:a;
-	health:Int=10;
-	$:=nodes=a;
-	obj:=(a=(b=2));
-	(a=(b=v)):=(a=(b=2));
-	v:=(a=(b=2)).a.b;
-	(b=v):=(a=(b=2)).a;
-	(a.b=v):=(a=(b=2));
-};
-fizbuz := \
-	for {
-		str := "";
-		(str += "fiz") &? i in 1..=100 % 3 == 0;
-		(str += "buz") &? i % 5 == 0;
-		(str += "baz") &? i % 7 == 0;
-		print,str;
-	}
-;
-{//if statements
-	lineBreakFile:=\{
-		#file:Option(String);
-		hasFile := file?&1?|0;
-		hasFile?&//idea: '?.' throws if null '.' doesn't
-			file.split,"\n"
-		?|
-			null
-	};
-};
-odds := \!<
-	for i:=0 => {
-		(!>i)?&break#?;
-		i+=2;
-	};
-;
-/*for i in 1..=100 {
-
-};*/
-i := 0 do i++ while i < 10 => {
-	print(i)
-};
-obj := mod {
-	self := ();
-	@self.msg := \{print,"hello";self.log++;};
-	@self.printLog := \print,self.log;
-	self 
-};
-{
-	obj.msg();
-	obj.msg();
-	obj.msg();
-	obj
-};
-//array methods: m/=/map, f/filter, r/>/reduce, sl/slice, sp/splice, so/sort
-//examples:
-	{//example
-		mod{
-			Coords := \($$:;#x:=0;#y:=0);
-			player := (
-				$ = Coords{0;0};
-				health:Int=10;
-			);
+//idea: no types,
+//- special class syntax
+//- no 'foo{}' function calls, only 'foo()','foo,' etc... and 'array[]'
+//- normal ternary funcitons 'a?b?:c' or 'b?a?|c'
+//'mod' is not needed so much 
+//idea: use '/exp' for classes, use 'keyword exp { exps }' patterns aswell as 'keyword exp => exp'
+a:2;
+//reference
+	//'key ref exp'
+	this ref (getThis:this);
+	//the 'key' is only usable inside the ref's expression
+	//syntax is similar to the 'key in exp' pattern
+//classes
+	Class:/(//use '/exp' for class function ; a class adds properties to an object
+		//first argument referse to the instance object 'self'
+		method1 : \#this.$(*I)[0] + this.$(*I)[1];
+		method2 : \"hello world {a}";
+		defaultProperty : (4;5);
+	);
+	// '/exp' the exp is a prototype. The class function has 1 argument for this and combines the value of '#0' with the return value
+	classPollyfill:\classPrototype:
+		Self ref \data:{
+			newObj:(*:classPrototype;*:data);
+			newObj.$Self : newObj//'a:b' returns 'b'
 		}
-		/*
-			//Rust
-			struct Coords{x:Int;y:Int};
-			struct Player {
-				coords:Coords,
-				health:Int,
-			}
-			let player = Player{
-				coords:Coords(0,0),
-				health:10,
-			};
-		*/
-		/*
-			//Javascript
-			let player = {
-				coords:Coords(0,0),
-				health:10,
-			};
-		*/
-	};
-	//btw the reason '{}' is used for blocks instead of '()' is that Sublime-text always treats '{}' as blocks and doesn't like using '()' as blocks.
-	{
-		DiGraph := \{#T;Self:=\($DiGraph=this;$:=#nodes:{*Self};T)};
-		assert DiGraph == \($DiGraph:;$\:);
-		DiGraph.a := $$();
-		assert DiGraph is \DiGraph(#T);
-		//note: an object's type is always a key of the object e.g. '(2;"a").$(Int;String)'
-		//note: 'a:T=b' only declares to a block if it's not inside another expression
-	};
-	{//callbacks
-		foo1:=\#callBack{};
-		foo2:=\#callBack{};
-		foo3:=\#callBack{};
-		foo4:=\#callBack{};
-		foo1{
-			\foo2{
-				\foo3{
-					\foo4,
-						\print,"done";
-				}
-			}
+	;
+	mergeObject:\##|>/##;
+	instance:Class($*I:[2;3]);
+	assert instance.method1() == Class;
+	assert instance.$*I == [2;3];
+	Car::(
+		Wheel:$$;
+	);
+	CarBody::(Window:\$$;Frame:\$$);
+	myCar : Car(Wheel();CarBody());
+//lazy expressions
+	//add a '`' for '`exp' to make an expression lazly evaluated
+	//lazy expressions are only evaluated when a property or call action is applied to the lazy expression.
+	//use 'exp`' to turn a lazy expression into a iterator
+	y_combinator : \f:{\#x,x},\f(`#x,x);
+	factorial : y_combinator,\#fact:\#n==0?1?|n*fact(n-1);
+	//without lazy version
+		factorial : fact ref \#n==0?1?|n*fact(n-1);
+	nextedLazyExpression : ``````5;
+	lazyFullEvaluator:\lazy:{
+		(*):(lazy);
+		lazyIter:!< {
+			while lazy is Lazy =>
+				!> lazy = lazy`;
+			;
 		};
-		foo1,
-			\foo2,
-				\foo3,
-					\foo4,
-						\print,"done"
-		;
-		foo1,\foo2,\foo3,\foo4,\print,"done";
-		async {
-			await>=foo1,#@;
-			await>=foo2,#@;
-			await>=foo3,#@;
-			await>=foo4,#@;
-			await>=print,"done";
-		};
-		church_numeral_five := \f:=\f,f,f,f,f,#x;
+		for
+			print,
+				in lazyIter;
+		return lazy;
+	}
+	//idea: use 'param\exp' and '(params)\exp' instead of '\(params):exp'
+//enums
+	//inspired by 0xmin's `{def let ...;#..compile}` objects
+	^(a;b;c);
+a:7;
+if 5 > a%10 > 0 {//in Set:[1,4]
+	print,"low:{a}";
+} else {
+	print,"high:{a}";
+};
+//objects
+	object:(a:;b:;c:);
+	(a;b;c):object;
+	newObject:(a;b;c);
+	assert (a;b) == (a;a:a;b;b:b);
+//type syntax:
+	//use '::' for type annotations
+	//'key::type_exp' states the type of a key
+	//'exp::type_exp' states the type of an expression
+	number::Number:2;
+	SomeStruct::\/(a;b;c);
+//public/private fields
+	//similar to JS we can use '@' to denote private keys, and private blocks
+	//if a block is private it limits it to the local 'mod' block
+	mod {
+		publicValue:2;
+		@privateValue:2;
 	};
-	{
-		Word := \(
-			#word:String;
-			#type:^(
-				Bracket:* *Word;
-				Label;
-				Symbol;
-				Number;
-			);
-			#debug:(
-				column:Int;
-				line:Int;
-				indent:Int;
-
-			);
-		);
-	};
-	{
-		normal_distribution := mod {
-			\##.<,\##[\1000|>(\##.<,0<:\##+1F.random)]+=1;
-		};
-	};
-	{
-		sum = \($*I):I=
-			##.>{;\##+##};
-		//(a:Int[]):Int=>//JS
-		//	a.r((s,v)=>s+v)
-		//f :: [Int] -> Int//haskell
-		//f [] = 0
-		//f (x:xs) = x + sumList xs
-	};
-	{
-		//idea: [] for enums
-			\:$[red;green;blue;$Int;Some:T,]=.Some(3);
-		*$
-		//note: language does not need 'dyn' keyword. functions are typed by their return values
-	};
+	//using symbols instead
+//blocks
+	{};exp//is the same as
+	{} exp//do not need a semi-colon after '{}' brackets
