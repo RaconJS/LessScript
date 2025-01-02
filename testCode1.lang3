@@ -393,13 +393,17 @@
 					C Char
 					B B8 B16 B32 B64 B128//BoolSet
 					E E8 E16 E32 E64 E128//Enum
+					Ec8 Ec16 Ec32 Ec64 Ec128//EnumCase
+					Bc8 Bc16 Ec32 Bc64 Bc128//BoolSetCase
 				//objects
 					Array{T;L} ; [...] ; L*T ; *T //array of T's of length 'L'
 					Vector ; V*T //where: V:Vector, T:Type
 					Struct(...) ; (...) //list of key type pairs + tuple items
 					Fn{T;[...]} ; Fn->T ; Fn[...]->T ; \T ; \(...):=T //function that takes in parameters 'P' and returns a 'T' ; P is must be a bracket literal
 					Enum(...) ; ^(...) ;  //if proceeded by a 'short_short_exp' then it matches to the "enum case" pattern '^short_short_exp.key' ; note: this syntax is a companise since we would prefer `case operator enum` syntax.
+					EnumCase //stored as only an Int, item from an enum
 					BoolSet(...) ; |(...)//array of booleans ; can me matched against like an enum but multiple cases will run instead of just 1, similar to Enum
+					BoolSetCase
 					//e.g.
 						Compound_type1_multi_inheritence ::= $$($*:Int;$*:String);
 						Compound_type2_traits ::= $$($Int:;$String:);

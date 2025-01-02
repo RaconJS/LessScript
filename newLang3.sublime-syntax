@@ -52,9 +52,9 @@ contexts:
           Number|
           String|
           Char|
-          Float|Fixed|Uint|Int|([UFI]|Fx|B|E)(?:8|16|32|64|128)|Bool|
-          U|I|F|Fx|N|S|C|E|B|
-          Unit|Enum|Bools|
+          Float|Fixed|Uint|Int|([UFI]|Fx|Bc?|Ec?)(?:8|16|32|64|128)|Bool|
+          U|I|F|Fx|N|S|C|E|B|Ec|Bc
+          Unit|Enum|BoolSet|BoolSetCase|EnumCase|
           Undefined|Any|
           Tuple|Struct|
           Array|
@@ -71,6 +71,11 @@ contexts:
       scope: storage.type.lang
     #function declaration
     - match: '\s*{{match_lambdaSymbol}}' #lambda
+      scope: keyword.declaration.function.lang
+
+    - match: '(?<!\w|[\)\]\}]|\+\+|/)\s*(/)(?!/)' # '/class'
+      scope: keyword.declaration.function.lang
+    - match: '(?<!\w|[\)\]\}]|\+\+)\s*(^)' # ^enum'
       scope: keyword.declaration.function.lang
     
     #function call

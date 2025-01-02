@@ -21,7 +21,7 @@ a:2;
 	classPollyfill:\classPrototype:
 		Self ref \data:{
 			newObj:(*:classPrototype;*:data);
-			newObj.$Self : newObj//'a:b' returns 'b'
+			newObj.$Self : newObj//'a:b' returns 'b' ; similar to 0xmin, cannot add properties with 'a.b=c' only with 'a.b:c'
 		}
 	;
 	mergeObject:\##|>/##;
@@ -57,7 +57,10 @@ a:2;
 	//idea: use 'param\exp' and '(params)\exp' instead of '\(params):exp'
 //enums
 	//inspired by 0xmin's `{def let ...;#..compile}` objects
-	^(a;b;c);
+	enum : ^(a;b;c);
+	assert enum.a.$Ec == 0;
+	assert enum.b.$Ec == 1;
+	assert enum.c.$Ec == 2;
 a:7;
 if 5 > a%10 > 0 {//in Set:[1,4]
 	print,"low:{a}";
@@ -78,11 +81,24 @@ if 5 > a%10 > 0 {//in Set:[1,4]
 //public/private fields
 	//similar to JS we can use '@' to denote private keys, and private blocks
 	//if a block is private it limits it to the local 'mod' block
-	mod {
-		publicValue:2;
-		@privateValue:2;
+	object : mod {
+		publicField:2;
+		@privateField:3;
+		privateField:4;
+		assert @privateField != privateField;
+		(publicValue;@privateValue);
 	};
 	//using symbols instead
+	object:{
+		publicKey:$$;
+		$publicKey:2;
+		($publicKey);
+	};
+//function arguments
+	//variables declared inside function arguments 'foo( ... )' are used as named arguments
 //blocks
 	{};exp//is the same as
 	{} exp//do not need a semi-colon after '{}' brackets
+
+//examples:
+	normalDistrabution:\##.>(0,\##+F.random);
