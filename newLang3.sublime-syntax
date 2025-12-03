@@ -73,7 +73,7 @@ contexts:
     - match: '\s*{{match_lambdaSymbol}}' #lambda
       scope: keyword.declaration.function.lang
 
-    - match: '(?<!\w|[\)\]\}]|\+\+|/)\s*(/)(?!/)' # '/class'
+    - match: '(?<!\w|[\)\]\}]|\+\+|/)\s*(/)(?![/*])' # '/class'
       scope: keyword.declaration.function.lang
     - match: '(?<!\w|[\)\]\}]|\+\+)\s*(^)' # ^enum'
       scope: keyword.declaration.function.lang

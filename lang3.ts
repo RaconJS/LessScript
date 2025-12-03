@@ -356,6 +356,7 @@ const fs = Deno;//require("fs");
 									word.match(/^(?:\\)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:\$\$)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:\.\.\*)$/) ? {type:SyntaxTree.type.operator}:
+									word.match(/^`$/) ? {type:SyntaxTree.type.operator}:
 									word.match(/^(?:if|while|for|match|break|catch|assert|is)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:mod)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^in$/) ? {type:SyntaxTree.type.operator} :
@@ -368,7 +369,7 @@ const fs = Deno;//require("fs");
 									word.match(/^[;]$/) ? {type:SyntaxTree.type.sepparator} :
 									word.match(/^"$/) ? {type:SyntaxTree.type.symbol}://extra '"'s are caught and are handled later on
 									//word.match(/^\S+$/) ? "symbol":
-									(()=>{throw Error("compiler error: unhandled symbol: '" + word + "'. Either add a case using 'type:SyntaxTree.type.symbol' for this or add a proper error for this case")})()
+									(()=>{throw Error(`compiler error: unhandled symbol: '${word}' on line ${line}. Either add a case using 'type:SyntaxTree.type.symbol' for this or add a proper error for this case`)})()
 								),
 								indent,
 								isAfterWhiteSpace,//'+ ='
@@ -523,32 +524,35 @@ const fs = Deno;//require("fs");
 			let operators = {};
 			dataObj.forEach((proceedenceOpers,i)=>{//adds the rest of the poperties to the OperatorData objects
 				Object.keys(proceedenceOpers).forEach((v:String)=>{//operator:OperatorData
-					let operatorData = proceedenceOpers[v];//:OperatorData
-					v = v.match(/[^\x00]+/)[0];
-					operatorData.proceedence = [undefined,undefined];
-					let parameter:Option<Bool[2]> = operatorData.parameter;
-					operators[v]??={prefix:null,infix:null,postfix:null,nofix:null};//:OperatorProceedence
-					if(operatorData.afix == OperatorData.AfixType.prefix){
-						operatorData = (operators[v].prefix ??= operatorData);
-						operatorData.numOfArgs ??= 1;
+					let operatorDataList:OperatorData[] = proceedenceOpers[v];
+					if(!(operatorDataList instanceof Array))operatorDataList = [operatorDataList];
+					for(let operatorData:OperatorData of operatorDataList){
+						v = v.match(/[^\x00]+/)[0];
+						operatorData.proceedence = [undefined,undefined];
+						let parameter:Option<Bool[2]> = operatorData.parameter;
+						operators[v]??={prefix:null,infix:null,postfix:null,nofix:null};//:OperatorProceedence
+						if(operatorData.afix == OperatorData.AfixType.prefix){
+							operatorData = (operators[v].prefix ??= operatorData);
+							operatorData.numOfArgs ??= 1;
+						}
+						else if(operatorData.afix == OperatorData.AfixType.infix){
+							operatorData = (operators[v].infix ??= operatorData);
+							operatorData.numOfArgs ??= 2;
+						}
+						else if(operatorData.afix == OperatorData.AfixType.postfix){
+							operatorData = (operators[v].postfix ??= operatorData);
+							operatorData.numOfArgs ??= 1;
+						}
+						else if(operatorData.afix == OperatorData.AfixType.nofix){
+							operatorData = (operators[v].nofix ??= operatorData);
+							operatorData.numOfArgs ??= 0;
+						}
+						if(parameter != undefined)operatorData.proceedence[parameter] = i;
+						else {
+							operatorData.proceedence[0] ??= operatorData.afix & OperatorData.AfixType.operatorWithLeftArg ? i : 0;
+							operatorData.proceedence[1] ??= operatorData.afix & OperatorData.AfixType.operatorWithRightArg ? i : 0;
+						};
 					}
-					else if(operatorData.afix == OperatorData.AfixType.infix){
-						operatorData = (operators[v].infix ??= operatorData);
-						operatorData.numOfArgs ??= 2;
-					}
-					else if(operatorData.afix == OperatorData.AfixType.postfix){
-						operatorData = (operators[v].postfix ??= operatorData);
-						operatorData.numOfArgs ??= 1;
-					}
-					else if(operatorData.afix == OperatorData.AfixType.nofix){
-						operatorData = (operators[v].nofix ??= operatorData);
-						operatorData.numOfArgs ??= 0;
-					}
-					if(parameter != undefined)operatorData.proceedence[parameter] = i;
-					else {
-						operatorData.proceedence[0] ??= operatorData.afix & OperatorData.AfixType.operatorWithLeftArg ? i : 0;
-						operatorData.proceedence[1] ??= operatorData.afix & OperatorData.AfixType.operatorWithRightArg ? i : 0;
-					};
 				})
 			});
 			return operators;
@@ -604,7 +608,7 @@ const fs = Deno;//require("fs");
 				},
 				{
 					"!"    :{afix:OperatorData.AfixType.prefix},
-					"?"    :{afix:OperatorData.AfixType.prefix},//same as `option.is_some()` in rust
+					//"?"    :{afix:OperatorData.AfixType.prefix},//same as `option.is_some()` in rust
 					"+"    :{afix:OperatorData.AfixType.prefix},//:to number
 					"-"    :{afix:OperatorData.AfixType.prefix},//:to negative number
 					"~"    :{afix:OperatorData.AfixType.prefix},//:not
@@ -689,7 +693,9 @@ const fs = Deno;//require("fs");
 				{
 					"="     :{afix:OperatorData.AfixType.infix,isInverseBracketing:true},//'a=(b=c)' instead of '(a=b)=c'
 					"=\x00" :{afix:OperatorData.AfixType.prefix,isInverseBracketing:true},//'a=(b=c)' instead of '(a=b)=c'
-					"\\"    :{afix:OperatorData.AfixType.prefix},
+					"\\"    :{afix:OperatorData.AfixType.prefix},//function
+					"/"    :{afix:OperatorData.AfixType.prefix},//class
+					"`"    :{afix:OperatorData.AfixType.prefix},
 					"if"    :{afix:OperatorData.AfixType.prefix,includes:["=>"]},
 					"else"  :{afix:OperatorData.AfixType.infix},//'if' else, 'if', 'while', 'match', 'for'
 					"match" :{afix:OperatorData.AfixType.prefix},
@@ -708,6 +714,10 @@ const fs = Deno;//require("fs");
 					"!<"    :{afix:OperatorData.AfixType.prefix},
 					"!>"    :{afix:OperatorData.AfixType.prefix},
 					"mod"   :{afix:OperatorData.AfixType.prefix},
+					"ref"   :[
+						{afix:OperatorData.AfixType.prefix},
+						{afix:OperatorData.AfixType.infix}
+					],
 				},
 				{
 					"¬":{afix:OperatorData.AfixType.infix,parameter:OperatorData.left},

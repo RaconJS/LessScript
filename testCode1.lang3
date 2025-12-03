@@ -84,17 +84,22 @@
 	//',' consumes up to nearest short_exp since it's used for function calls
 	//end expression: ';' in 'exp;'
 	//function call: ',' in 'short_exp,short_exp' e.g. 'foo,bar' == 'foo(bar)'
-	//key using: '.' in 'short_exp.short_exp' e.g. 'obj.a'
+	//key using: '.' in 'short_exp.short_exp' e.g. 'obj.a' or 'obj.$A'
 	//'$lbl' for external symbol ; '#lbl' for parameter
 	//about modules (i.e. 'mod'): only '@' labels are public. the call actions 'f()' 'f{}' are always public
-	//'short_exp(a;b;c)' can use array-like syntax in '( )' blocks when used in function calls, can still use `foo,(a:=2;a)` to return the last value
+	//'short_exp(a;b;c)' can use array-like syntax in '( )' blocks when used in function calls, can still use `foo,(a:=2;bar();a)` to return the last value `a`
 	//'( exps ) : type_exp' for typing expressions
 	//'{ args_exps } = exp' , '[ args_exps ] = exp' destructureing 
 	//'short_exp..short_exp' and 'short_exp..=short_exp' range syntax, same as in Rust.
 	//'...' is similar to 'todo!()' in rust marks unfinished or dummy code; '...' is a full 'exp', allowing for e.g. 'foo<|\...<|3' --> 'foo((\(...))(3))' .
+		//'...' normally does not throw an error unless it's inspected.
+		//'!!!' throws an error always, just like Rusts `todo!()`
+			\if !##=>(10)
+		//'...' throws an error throws an error if:
+			//a property of '...' is accessed e.g. `(...).a`
 		a:={...};
 		a.c;//error: a is not implemented
-		foo:=\...
+		foo:=\...;
 	// '*' in '* : type = value' injects properties & arrays into the parent block
 		// '* @ : type = value' injects all public properties into the parent block
 		// '* $ : type = value' injects all properties (both public and non-public) into the parent block
@@ -142,7 +147,7 @@
 		//compound objects:
 			T := \{$$:};//unique unit type
 			U := \{$$:};
-			normal_object : {a:Char;b:Int} = {b:=2;c:="A"};
+			normal_object : {a:Char;b:Int} = {b:=2;a:="A"};
 			compound_object1 :{T;U}={T,;U,};
 			compound_object2 :{T;U}={$T:T=T();$U:U=U()};
 	//types:
@@ -180,6 +185,7 @@
 		//for
 			//for loops returns last value
 			for exp => exp; /*or*/ for exp in exp => exp;
+			for exp short_exp;
 			for iterable_exp => body_exp;
 			for parameters_exp in iterable_exp => body_exp;
 			//e.g.
@@ -299,7 +305,7 @@
 			s.push,
 		;
 		//'=>' subfunction: 'keyword special_args_exp => special_exp' ; use '#@label' and '#@' for parameters instead of '#label' and '##'
-	)
+	);
 	(
 		//leat code daily question
 		//https://leetcode.com/problems/shortest-subarray-with-or-at-least-k-ii/description/?envType=daily-question&envId=2024-11-10
@@ -350,7 +356,7 @@
 		//short_exp
 			//block
 				{exps}
-				{=exp;exps} ; {:type_exp=exp;exps}//the first exp is exicuted last; note: if it contains any '#lbl's then they will still will address the first parameters
+				{=exp;exps} ; {:type_exp=exp;exps}//the first exp is executed last; note: if it contains any '#lbl's then they will still will address the first parameters
 				{:type_exp;exps}//types a block. the last expression in the block must be of type 'type_exp'.
 			//array
 				[exps]
@@ -520,7 +526,8 @@
 			//operators
 				exp+exp//can use any infix operator
 				!short_exp//prefix operator
-				exp > exp < exp //chainable comparison operators
+				exp > exp < exp //chainable comparison operators e.g. 'x<y<z' --> 'x<y && y<z'
+				exp == exp == exp //chainable equality operators e.g. 'x == y == z' --> 'x==y && y==z'
 				//operators
 					//infix
 						+ - * / ** %% % //float note: 'a%%b' is for log i.e. {log_b{a}} == 'log{a}/log{b}'
@@ -547,7 +554,7 @@
 				//consumes all of the exp on the left
 				//same as in 0xmin
 				assert {\##+##¬{2;3}*2} == {{\##+##}{2;3}*2};
-			//ternary operator
+			//ternary operator '?&' + '?|'
 				//functions the same as a for loop
 				condition_exp ?& then_exp ?| otherwise_exp //"and then" "or else"
 				then_exp &? condition_exp ?| otherwise_exp
@@ -631,7 +638,7 @@
 					//condition_exp:
 						//normal exp with special pattern for Rusts 'if let'-like expression
 						key:type=obj
-						:type=obj //inner value can then be reverenced with '#?name'
+						:type=obj //inner value can then be reverenced with '#?' or '#?name'
 						//can do 'if let T{inner} = obj (inner)'
 							obj := Option.Some(2);
 							if (inner) : Option.Some = obj => print,inner else inner;
@@ -653,7 +660,7 @@
 						for => exp
 						in iterable_exp
 						do exp
-					match exp => exp
+					match exp => match_exp
 					//for loops
 						//for loops:
 						in iterable_exp //takes in an iterable object and returns each value from it, per loop in a for loop
@@ -684,6 +691,11 @@
 							.Some=print{#@};
 							.None=print{"none"};
 						)
+						a := 2
+						match a => [
+							{assert #@ == a == 0;print,"a == 0"};
+							print,"a == 1";
+						]
 				//
 					iter yeild//used for iterators, similar to Javascript
 					async await//async
@@ -938,6 +950,13 @@
 				await>=foo4,#@;
 				await>=print,"done";
 			};
+			!< {
+				!> foo1,#@;
+				!> foo2,#@;
+				!> foo3,#@;
+				!> foo4,#@;
+				!> print,"done";
+			};
 			church_numeral_five := \f:=\f,f,f,f,f,#x;
 		};
 		{
@@ -977,4 +996,22 @@
 			*$
 			//note: language does not need 'dyn' keyword. functions are typed by their return values
 		};
-//5:
+		add := \##+##;
+//4.2.1:
+	struct := \{x:I;y:I};
+	trait := /{a:\;b=};
+//4.2.2:
+	//notes on design so far:
+		//problems with previous language design:
+			//lack of nice rust-like struct constructors.
+		//some of the language strengths so far:
+			//very reduced naming variables.
+			//terse
+			//lack of brackets for keyword expressions
+			//fast to write, (harder to read)
+			//makes a good, terse advent of code, language
+			//assign&declareing parameters, parts of keyword-statements, properties on objects &/| structs.
+	//ealy return with '?':
+		exp ?
+	//postfix not operator
+		short_exp!

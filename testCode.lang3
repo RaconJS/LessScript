@@ -28,9 +28,7 @@ a:2;
 	instance:Class($*I:[2;3]);
 	assert instance.method1() == Class;
 	assert instance.$*I == [2;3];
-	Car::(
-		Wheel:$$;
-	);
+	Car:/(displayNumber:\print,##);
 	CarBody::(Window:\$$;Frame:\$$);
 	myCar : Car(Wheel();CarBody());
 //lazy expressions
@@ -55,12 +53,6 @@ a:2;
 		return lazy;
 	}
 	//idea: use 'param\exp' and '(params)\exp' instead of '\(params):exp'
-//enums
-	//inspired by 0xmin's `{def let ...;#..compile}` objects
-	enum : ^(a;b;c);
-	assert enum.a.$Ec == 0;
-	assert enum.b.$Ec == 1;
-	assert enum.c.$Ec == 2;
 a:7;
 if 5 > a%10 > 0 {//in Set:[1,4]
 	print,"low:{a}";
@@ -99,6 +91,33 @@ if 5 > a%10 > 0 {//in Set:[1,4]
 //blocks
 	{};exp//is the same as
 	{} exp//do not need a semi-colon after '{}' brackets
-
+//references '&short_exp'
+	//assignment clones an object by default
+	//'&object' can be used to take a reference to one
+	obj:(1;2;3);
+	obj[3] = obj;//clones obj, and assigns it to obj[3] ; this prevents circular references
+	assert obj[3] = (1;2;3);
+	assert obj = (1;2;(1;2;3));
+	obj[3] = &obj;
+	//'&' references are not cloned
+//idea: can use '#' aswell as '##' for unnamed parameters
+//idea: can use '@' instead of '#@', 'for in [1,2]=>#@'
+//idea: to turn this into a strongly typed language:
+	//use 'short_exp::type_short_exp' to annotate expressions or variables
+	//can also use '#key:type_short_exp' for parameters
+		//in Rust only function parameters need to be typed
+//proposal: swap ';' and ',' ; ',' ends expressions, ';' is for fuction calls ; this was done for eugonomics with typing arrays []
 //examples:
 	normalDistrabution:\##.>(0,\##+F.random);
+	update:ref{$*:[];$Fn:\this.<};
+	dt:1/60;
+	game:{
+		Bullet:/ref(
+			coords:[0;0];
+			velocity:[0;0];
+			update:\
+				coords.=,\##+velocity[##]*dt;
+				objects.=,\##.coords.>(0;coords);
+			;
+		)
+	}
