@@ -1,10 +1,12 @@
-//idea: no types,
+//idea: no types ; use 'short_exp:exp' for assignment
 //- special class syntax
 //- no 'foo{}' function calls, only 'foo()','foo,' etc... and 'array[]'
 //- normal ternary funcitons 'a?b?:c' or 'b?a?|c'
 //'mod' is not needed so much 
 //idea: use '/exp' for classes, use 'keyword exp { exps }' patterns aswell as 'keyword exp => exp'
-a:2;
+a:b;
+a:T=b;
+1 + 1;
 //reference
 	//'key ref exp'
 	this ref (getThis:this);
@@ -38,10 +40,10 @@ a:2;
 	y_combinator : \f:{\#x,x},\f(`#x,x);
 	factorial : y_combinator,\#fact:\#n==0?1?|n*fact(n-1);
 	//without lazy version
-		factorial : fact ref \#n==0?1?|n*fact(n-1);
+		factorial : fact ref \#n==0?&1?|n*fact(n-1);
 	nextedLazyExpression : ``````5;
 	lazyFullEvaluator:\lazy:{
-		(*):(lazy);
+		//(*):(lazy);
 		lazyIter:!< {
 			while lazy is Lazy =>
 				!> lazy = lazy`;
@@ -89,8 +91,8 @@ if 5 > a%10 > 0 {//in Set:[1,4]
 //function arguments
 	//variables declared inside function arguments 'foo( ... )' are used as named arguments
 //blocks
-	{};exp//is the same as
-	{} exp//do not need a semi-colon after '{}' brackets
+	{};exp;//is the same as
+	{} exp;//do not need a semi-colon after '{}' brackets
 //references '&short_exp'
 	//assignment clones an object by default
 	//'&object' can be used to take a reference to one
@@ -106,6 +108,11 @@ if 5 > a%10 > 0 {//in Set:[1,4]
 	//use 'short_exp::type_short_exp' to annotate expressions or variables
 	//can also use '#key:type_short_exp' for parameters
 		//in Rust only function parameters need to be typed
+//idea: allow '#' instead of '##', '#label' now requires no spaces inbetween '#' and 'label'
+//idea: function syntax
+	\a:b:c=a+b+c;
+	//instead of 
+	\(a;b;c)=a+b+c;
 //proposal: swap ';' and ',' ; ',' ends expressions, ';' is for fuction calls ; this was done for eugonomics with typing arrays []
 //examples:
 	normalDistrabution:\##.>(0,\##+F.random);
@@ -121,3 +128,5 @@ if 5 > a%10 > 0 {//in Set:[1,4]
 			;
 		)
 	}
+	sum:\#.>,\#+#;
+	sum=\a=a.>,\s:v=s+v;

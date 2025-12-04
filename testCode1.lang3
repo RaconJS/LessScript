@@ -487,6 +487,13 @@
 						foo(2;a#2);
 						//note: in '#name' '#@name' 'etc...' parameter patterns there cannot be a space between the '#' and the name. this makes ( 'a #a' --> error ) different from ( 'a# a' --> uses named argument)
 							//'a#b' == 'a# b'
+			//extra control flow '?' 'break' 'return'
+				return exp;
+				break exp;
+				continue exp;
+				exp?//ealy return ; same as `return exp`
+				exp?#@//breaks from the nearest owner of 
+					//can break from for,
 			//enum
 				Enum (
 					String;

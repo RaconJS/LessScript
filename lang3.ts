@@ -65,9 +65,14 @@ function swapBrackets(){
 			assert(false,msg,errorFunc);
 		}
 	}
-	assert.impossibleCase = function(msg = undefined,errorFunc = e=>Error(e)){
+	assert.impossibleCase = function(msg = "",errorFunc = e=>Error(e)){
 		if(debugMode){
-			assert(false,"impossible case: "+msg,errorFunc);
+			assert(false,"impossible case: " + msg,errorFunc);
+		}
+	}
+	assert.expect = function(condision,msg = "",errorFunc = e=>Error(e)){
+		if(debugMode){
+			assert(condision,"expected: " + msg,errorFunc);
 		}
 	}
 	function unimplemented(msg = "",errorFunc = e=>Error(e)){
@@ -357,7 +362,7 @@ const fs = Deno;//require("fs");
 									word.match(/^(?:\$\$)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:\.\.\*)$/) ? {type:SyntaxTree.type.operator}:
 									word.match(/^`$/) ? {type:SyntaxTree.type.operator}:
-									word.match(/^(?:if|while|for|match|break|catch|assert|is)$/) ? {type:SyntaxTree.type.operator} :
+									word.match(/^(?:if|while|for|match|break|continue|return|catch|assert|is)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:mod)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^in$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:else|do)$/) ? {type:SyntaxTree.type.operator} :
@@ -560,161 +565,166 @@ const fs = Deno;//require("fs");
 		const operatorProceedence = //:Object & Map(string->{prefix:OperatorData?,infix:OperatorData?,postfix:OperatorData?})
 			intoOperatorProceedence([//:{[string]:OperatorData}[] ; note: '\x00's are ignored to allow for duplicate entries with the same preceedence
 				{
-					"..."  :{afix:OperatorData.AfixType.nofix},
-					"!!!"  :{afix:OperatorData.AfixType.nofix},
-					"$$"   :{afix:OperatorData.AfixType.nofix},
-					"$"    :{afix:OperatorData.AfixType.nofix},
-					"##"   :{afix:OperatorData.AfixType.nofix},
-					"#@"   :{afix:OperatorData.AfixType.nofix},
-					"#?"   :{afix:OperatorData.AfixType.nofix},
-					"#!"   :{afix:OperatorData.AfixType.nofix},
-					"break":{afix:OperatorData.AfixType.nofix},
-					":"    :{afix:OperatorData.AfixType.nofix},
-					"::"   :{afix:OperatorData.AfixType.nofix},
+					"..."     :{afix:OperatorData.AfixType.nofix},
+					"!!!"     :{afix:OperatorData.AfixType.nofix},
+					"$$"      :{afix:OperatorData.AfixType.nofix},
+					"$"       :{afix:OperatorData.AfixType.nofix},
+					"##"      :{afix:OperatorData.AfixType.nofix},
+					"#@"      :{afix:OperatorData.AfixType.nofix},
+					"#?"      :{afix:OperatorData.AfixType.nofix},
+					"#!"      :{afix:OperatorData.AfixType.nofix},
+					":"       :{afix:OperatorData.AfixType.nofix},
+					"::"      :{afix:OperatorData.AfixType.nofix},
 				},
 				{
-					"#"  :{afix:OperatorData.AfixType.prefix},
-					"$"  :{afix:OperatorData.AfixType.prefix},
-					"#@" :{afix:OperatorData.AfixType.prefix},
-					"#?" :{afix:OperatorData.AfixType.prefix},
-					"#!" :{afix:OperatorData.AfixType.prefix},
+					"#"       :{afix:OperatorData.AfixType.prefix},
+					"$"       :{afix:OperatorData.AfixType.prefix},
+					"#@"      :{afix:OperatorData.AfixType.prefix},
+					"#?"      :{afix:OperatorData.AfixType.prefix},
+					"#!"      :{afix:OperatorData.AfixType.prefix},
 				},
 				{
-					"."  :{afix:OperatorData.AfixType.infix,optionalArg:[1,0]},
-					"?." :{afix:OperatorData.AfixType.infix,optionalArg:[1,0]},//same as in javascript's `option?.property`
+					"."       :{afix:OperatorData.AfixType.infix,optionalArg:[1,0]},
+					"?."      :{afix:OperatorData.AfixType.infix,optionalArg:[1,0]},//same as in javascript's `option?.property`
 				},
 				{
-					"("  :{afix:OperatorData.AfixType.postfix},
-					"["  :{afix:OperatorData.AfixType.postfix},
-					"{"  :{afix:OperatorData.AfixType.postfix},
+					"("       :{afix:OperatorData.AfixType.postfix},
+					"["       :{afix:OperatorData.AfixType.postfix},
+					"{"       :{afix:OperatorData.AfixType.postfix},
+					"`"       :{afix:OperatorData.AfixType.postfix},//early return
 				},
 				{
-					","    :{afix:OperatorData.AfixType.infix,optionalArg:[0,1],isInverseBracketing:true},
-					",\x00":{afix:OperatorData.AfixType.postfix},
-					":>"   :{afix:OperatorData.AfixType.infix},
-					"<:"   :{afix:OperatorData.AfixType.infix},
-					"|>"   :{afix:OperatorData.AfixType.infix},
-					"<|"   :{afix:OperatorData.AfixType.infix,isInverseBracketing:true},
+					","       :{afix:OperatorData.AfixType.infix,optionalArg:[0,1],isInverseBracketing:true},
+					",\x00"   :{afix:OperatorData.AfixType.postfix},
+					":>"      :{afix:OperatorData.AfixType.infix},
+					"<:"      :{afix:OperatorData.AfixType.infix},
+					"|>"      :{afix:OperatorData.AfixType.infix},
+					"<|"      :{afix:OperatorData.AfixType.infix,isInverseBracketing:true},
 				},
 				{
-					":"     :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,optionalArg:[0,1]},
-					":\x00" :{afix:OperatorData.AfixType.postfix,parameter:OperatorData.left,optionalArg:[0,1]},
-					"::"    :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,optionalArg:[0,1]},
-					"::\x00":{afix:OperatorData.AfixType.postfix,parameter:OperatorData.left,optionalArg:[0,1]},
+					":"       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,optionalArg:[0,1]},
+					":\x00"   :{afix:OperatorData.AfixType.postfix,parameter:OperatorData.left,optionalArg:[0,1]},
+					"::"      :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,optionalArg:[0,1]},
+					"::\x00"  :{afix:OperatorData.AfixType.postfix,parameter:OperatorData.left,optionalArg:[0,1]},
 				},
 				{
-					"="    :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,isInverseBracketing:true},
-					"=\x00":{afix:OperatorData.AfixType.postfix,parameter:OperatorData.left,isInverseBracketing:true},
+					"="       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,isInverseBracketing:true},
+					"=\x00"   :{afix:OperatorData.AfixType.postfix,parameter:OperatorData.left,isInverseBracketing:true},
 				},
 				{
-					"!"    :{afix:OperatorData.AfixType.prefix},
-					//"?"    :{afix:OperatorData.AfixType.prefix},//same as `option.is_some()` in rust
-					"+"    :{afix:OperatorData.AfixType.prefix},//:to number
-					"-"    :{afix:OperatorData.AfixType.prefix},//:to negative number
-					"~"    :{afix:OperatorData.AfixType.prefix},//:not
-					"*"    :{afix:OperatorData.AfixType.prefix},//:array type 
-					"^"    :{afix:OperatorData.AfixType.prefix},//:enum type
-					"|"    :{afix:OperatorData.AfixType.prefix},//:boolean set type
-					"&"    :{afix:OperatorData.AfixType.prefix},//:reference type ; this type is not implemented since this is a high-level langauge
-					"++"   :{afix:OperatorData.AfixType.prefix},
-					"--"   :{afix:OperatorData.AfixType.prefix},
+					"!"       :{afix:OperatorData.AfixType.prefix},
+					"+"       :{afix:OperatorData.AfixType.prefix},//:to number
+					"-"       :{afix:OperatorData.AfixType.prefix},//:to negative number
+					"~"       :{afix:OperatorData.AfixType.prefix},//:not
+					"*"       :{afix:OperatorData.AfixType.prefix},//:array type 
+					"^"       :{afix:OperatorData.AfixType.prefix},//:enum type
+					"|"       :{afix:OperatorData.AfixType.prefix},//:boolean set type
+					"&"       :{afix:OperatorData.AfixType.prefix},//:reference type ; this type is not implemented since this is a high-level langauge
+					"++"      :{afix:OperatorData.AfixType.prefix},
+					"--"      :{afix:OperatorData.AfixType.prefix},
 				},
 				{
-					"++"   :{afix:OperatorData.AfixType.postfix},
-					"--"   :{afix:OperatorData.AfixType.postfix},
+					"++"      :{afix:OperatorData.AfixType.postfix},
+					"--"      :{afix:OperatorData.AfixType.postfix},
 				},
 				{
-					".."   :{afix:OperatorData.AfixType.infix},
-					"..="  :{afix:OperatorData.AfixType.infix},
+					".."      :{afix:OperatorData.AfixType.infix},
+					"..="     :{afix:OperatorData.AfixType.infix},
 				},
 				{
-					"in"   :{afix:OperatorData.AfixType.infix},
-					"$*"   :{afix:OperatorData.AfixType.prefix},
-					"@*"   :{afix:OperatorData.AfixType.prefix},
-					"!@*"  :{afix:OperatorData.AfixType.prefix},
+					"in"      :{afix:OperatorData.AfixType.infix},
+					"$*"      :{afix:OperatorData.AfixType.prefix},
+					"@*"      :{afix:OperatorData.AfixType.prefix},
+					"!@*"     :{afix:OperatorData.AfixType.prefix},
 				},
 				{
-					"¬"    :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left},
+					"¬"       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left},
 				},
 				{
-					"**"   :{afix:OperatorData.AfixType.infix},
-					"%%"   :{afix:OperatorData.AfixType.infix},
+					"**"      :{afix:OperatorData.AfixType.infix},
+					"%%"      :{afix:OperatorData.AfixType.infix},
 				},
 				{
-					"*"    :{afix:OperatorData.AfixType.infix},
-					"/"    :{afix:OperatorData.AfixType.infix},
+					"*"       :{afix:OperatorData.AfixType.infix},
+					"/"       :{afix:OperatorData.AfixType.infix},
 				},
 				{
-					"+"    :{afix:OperatorData.AfixType.infix},
-					"-"    :{afix:OperatorData.AfixType.infix},
+					"+"       :{afix:OperatorData.AfixType.infix},
+					"-"       :{afix:OperatorData.AfixType.infix},
 				},
 				{
-					"%"    :{afix:OperatorData.AfixType.infix},
+					"%"       :{afix:OperatorData.AfixType.infix},
 				},
 				{
-					"&"    :{afix:OperatorData.AfixType.infix},
-					"^"    :{afix:OperatorData.AfixType.infix},
-					"~"    :{afix:OperatorData.AfixType.infix},
+					"&"       :{afix:OperatorData.AfixType.infix},
+					"^"       :{afix:OperatorData.AfixType.infix},
+					"~"       :{afix:OperatorData.AfixType.infix},
 				},
 				{
-					">>"   :{afix:OperatorData.AfixType.infix},
-					"<<"   :{afix:OperatorData.AfixType.infix},
-					">>>"  :{afix:OperatorData.AfixType.infix},
+					">>"      :{afix:OperatorData.AfixType.infix},
+					"<<"      :{afix:OperatorData.AfixType.infix},
+					">>>"     :{afix:OperatorData.AfixType.infix},
 				},
 				{
-					"|"    :{afix:OperatorData.AfixType.infix},
+					"|"       :{afix:OperatorData.AfixType.infix},
 				},
 				{
-					"=="   :{afix:OperatorData.AfixType.infix},
-					"!="   :{afix:OperatorData.AfixType.infix},
-					">="   :{afix:OperatorData.AfixType.infix},
-					"<="   :{afix:OperatorData.AfixType.infix},
-					">"    :{afix:OperatorData.AfixType.infix},
-					"<"    :{afix:OperatorData.AfixType.infix},
+					"=="      :{afix:OperatorData.AfixType.infix},
+					"!="      :{afix:OperatorData.AfixType.infix},
+					">="      :{afix:OperatorData.AfixType.infix},
+					"<="      :{afix:OperatorData.AfixType.infix},
+					">"       :{afix:OperatorData.AfixType.infix},
+					"<"       :{afix:OperatorData.AfixType.infix},
 				},
 				{
-					"&&"   :{afix:OperatorData.AfixType.infix},
-					"||"   :{afix:OperatorData.AfixType.infix},
-					"^^"   :{afix:OperatorData.AfixType.infix},
-					"~~"   :{afix:OperatorData.AfixType.infix},
-					"is"   :{afix:OperatorData.AfixType.infix},
+					"!"       :{afix:OperatorData.AfixType.postfix},//early return
 				},
 				{
-					"?&"   :{afix:OperatorData.AfixType.infix},//ternary operator
-					"&?"   :{afix:OperatorData.AfixType.infix},//ternary operator
-					"?|"   :{afix:OperatorData.AfixType.infix},//ternary operator
+					"&&"      :{afix:OperatorData.AfixType.infix},
+					"||"      :{afix:OperatorData.AfixType.infix},
+					"^^"      :{afix:OperatorData.AfixType.infix},
+					"~~"      :{afix:OperatorData.AfixType.infix},
+					"is"      :{afix:OperatorData.AfixType.infix},
 				},
 				{
-					":"     :{afix:OperatorData.AfixType.infix,optionalArg:[0,1]},//variable declarator and type operator
-					":\x00" :{afix:OperatorData.AfixType.prefix},//variable declarator and type operator
-					"::"    :{afix:OperatorData.AfixType.infix,optionalArg:[0,1]},//variable declarator and type operator
-					"::\x00":{afix:OperatorData.AfixType.prefix},//variable declarator and type operator
+					"?"       :{afix:OperatorData.AfixType.infix},//ternary operator
+					"?&"      :{afix:OperatorData.AfixType.infix},//ternary operator
+					"&?"      :{afix:OperatorData.AfixType.infix},//ternary operator
+					"?|"      :{afix:OperatorData.AfixType.infix},//ternary operator
 				},
 				{
-					"="     :{afix:OperatorData.AfixType.infix,isInverseBracketing:true},//'a=(b=c)' instead of '(a=b)=c'
-					"=\x00" :{afix:OperatorData.AfixType.prefix,isInverseBracketing:true},//'a=(b=c)' instead of '(a=b)=c'
-					"\\"    :{afix:OperatorData.AfixType.prefix},//function
-					"/"    :{afix:OperatorData.AfixType.prefix},//class
-					"`"    :{afix:OperatorData.AfixType.prefix},
-					"if"    :{afix:OperatorData.AfixType.prefix,includes:["=>"]},
-					"else"  :{afix:OperatorData.AfixType.infix},//'if' else, 'if', 'while', 'match', 'for'
-					"match" :{afix:OperatorData.AfixType.prefix},
-					"do"    :{afix:OperatorData.AfixType.infix,includes:["while"]},//'while _ => _' or '_ do _ while _ => _'
-					"while" :{afix:OperatorData.AfixType.prefix,includes:["=>"]},//'while _ => _' or '_ do _ while _ => _'
-					"for"   :{afix:OperatorData.AfixType.prefix,includes:["=>"]},
-					"do"    :{afix:OperatorData.AfixType.infix,includes:["while"]},//'_ do _'
-					"try"   :{afix:OperatorData.AfixType.prefix,includes:["=>"]},// 'try exp => finally_exp else catch_exp' returns Result type
-					"break" :{afix:OperatorData.AfixType.prefix},
-					"assert":{afix:OperatorData.AfixType.prefix},
-					"async" :{afix:OperatorData.AfixType.prefix},
-					"await" :{afix:OperatorData.AfixType.prefix},
-					"$$"    :{afix:OperatorData.AfixType.prefix},//'\$${a=2;b=3}' '$$:=2' ; unique symbol
-					"=>"    :{afix:OperatorData.AfixType.infix},
-					"@"     :{afix:OperatorData.AfixType.prefix},
-					"!<"    :{afix:OperatorData.AfixType.prefix},
-					"!>"    :{afix:OperatorData.AfixType.prefix},
-					"mod"   :{afix:OperatorData.AfixType.prefix},
-					"ref"   :[
+					":"       :{afix:OperatorData.AfixType.infix,optionalArg:[0,1]},//variable declarator and type operator
+					":\x00"   :{afix:OperatorData.AfixType.prefix},//variable declarator and type operator
+					"::"      :{afix:OperatorData.AfixType.infix,optionalArg:[0,1]},//variable declarator and type operator
+					"::\x00"  :{afix:OperatorData.AfixType.prefix},//variable declarator and type operator
+				},
+				{
+					"="       :{afix:OperatorData.AfixType.infix,isInverseBracketing:true},//'a=(b=c)' instead of '(a=b)=c'
+					"=\x00"   :{afix:OperatorData.AfixType.prefix,isInverseBracketing:true},//'a=(b=c)' instead of '(a=b)=c'
+					"\\"      :{afix:OperatorData.AfixType.prefix},//function
+					"/"       :{afix:OperatorData.AfixType.prefix},//class
+					"`"       :{afix:OperatorData.AfixType.prefix},
+					"if"      :{afix:OperatorData.AfixType.prefix,includes:["=>"]},
+					"else"    :{afix:OperatorData.AfixType.infix},//'if' else, 'if', 'while', 'match', 'for'
+					"match"   :{afix:OperatorData.AfixType.prefix},
+					"do"      :{afix:OperatorData.AfixType.infix,includes:["while"]},//'while _ => _' or '_ do _ while _ => _'
+					"while"   :{afix:OperatorData.AfixType.prefix,includes:["=>"]},//'while _ => _' or '_ do _ while _ => _'
+					"for"     :{afix:OperatorData.AfixType.prefix,includes:["=>"]},
+					"do"      :{afix:OperatorData.AfixType.infix,includes:["while"]},//'_ do _'
+					"try"     :{afix:OperatorData.AfixType.prefix,includes:["=>"]},// 'try exp => finally_exp else catch_exp' returns Result type
+					"break"   :{afix:OperatorData.AfixType.prefix,optionalArg:[0,1]},//TODO: replace optionalArg:[0,1] with `true`
+					"continue":{afix:OperatorData.AfixType.prefix,optionalArg:[0,1]},
+					"return"  :{afix:OperatorData.AfixType.prefix,optionalArg:[0,1]},
+					"assert"  :{afix:OperatorData.AfixType.prefix},
+					"async"   :{afix:OperatorData.AfixType.prefix},
+					"await"   :{afix:OperatorData.AfixType.prefix},
+					"$$"      :{afix:OperatorData.AfixType.prefix},//'\$${a=2;b=3}' '$$:=2' ; unique symbol
+					"=>"      :{afix:OperatorData.AfixType.infix},
+					"@"       :{afix:OperatorData.AfixType.prefix},
+					"!<"      :{afix:OperatorData.AfixType.prefix},
+					"!>"      :{afix:OperatorData.AfixType.prefix},
+					"mod"     :{afix:OperatorData.AfixType.prefix},
+					"ref"     :[
 						{afix:OperatorData.AfixType.prefix},
 						{afix:OperatorData.AfixType.infix}
 					],
@@ -873,6 +883,7 @@ const fs = Deno;//require("fs");
 								assert(!!possibleAfixes,`unhandled case for operator '${word.word}' in \`operatorProceedence\``);
 								if(words[i-1]?.word == "." && "><=|".includes(word.word)){//for 'array.=(mapFunction)' ; converts into label
 									word.type = SyntaxTree.type.label;
+									word.subtype = undefined;
 									return new Expression.Label(word);
 								}
 								let num = !!possibleAfixes.prefix + !!possibleAfixes.infix + !!possibleAfixes.postfix + !!possibleAfixes.nofix;
@@ -917,14 +928,18 @@ const fs = Deno;//require("fs");
 											words[i-1]?.type == SyntaxTree.type.operator &&
 											(words[i-1].afix & SyntaxTree.AfixType.operatorWithRightArg)
 										)possibleAfix &= ~0b10;
-										if(
-											!hasArg(words[i+1]) ||
-											words[i+1]?.type == SyntaxTree.type.operator &&
-											(operatorProceedence[words[i+1]].infix)
-										){
-											if(hasArg(words[i+1]) && !operatorProceedence[words[i+1]].prefix){//assert is only infix
-											}else{
-												possibleAfix &= ~0b01;
+										{//checks for right argument ; '+b' / 'a+b'
+											if(!hasArg(words[i+1]))possibleAfix &= ~0b01;
+											else if(
+												words[i+1]?.type == SyntaxTree.type.operator &&
+												(
+													operatorProceedence[words[i+1]].infix &&
+													!operatorProceedence[words[i+1]].prefix//assert: words[i+1] must have left arg so we cannot
+													//ignores the nofix case here, nofix is userally for `(*)`
+												)
+											){
+												assert(!(operatorProceedence[words[i+1]].prefix && operatorProceedence[words[i+1]].postfix),"expected: no operator has these all 3 afix types at once");
+												possibleAfix &= ~0b01;//note: preceedence doesn't matter for removing right arg here since a syntax error would be thrown if it's wrong either way
 											}
 										}
 										operatorData = afixIntoOperatorData(possibleAfixes,possibleAfix);//:OperatorData?
@@ -944,22 +959,10 @@ const fs = Deno;//require("fs");
 											){
 												operatorData = possibleAfixes.prefix;
 											}
+											else if(possibleAfix == OperatorData.AfixType.nofix){//for '(*)'
+												operatorData = possibleAfixes.nofix;
+											}
 											else assert.impossibleCase(`unhanded case '${word}' in '${words.join(" ")}'`,e=>Error(e))
-										}
-										if(!operatorData){
-											assert.fail("unknown, but expected to be unreachable: it is unknown if this case is reachable. This code should be redundant although it doesn't hurt to run");
-											if(possibleAfixes.infix){
-												if(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)
-													operatorData = possibleAfixes.infix;
-												else
-													operatorData = possibleAfixes.prefix;
-											}
-											else{
-												if(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)
-													operatorData = possibleAfixes.postfix;
-												else
-													operatorData = possibleAfixes.prefix;
-											}
 										}
 										if(!operatorData)
 											word.throwError("syntax", `cannot use operator in that pattern got pattern: \`${
@@ -982,6 +985,10 @@ const fs = Deno;//require("fs");
 							}],
 						]);
 						if(exp)exps.push(exp);
+						if(word.word == "{" && (!words[i+1] || words[i+1].word == "{" || ![SyntaxTree.type.bracket,SyntaxTree.type.operator].includes(words[i+1].type))){//do not need ';' for '{}'s
+							i++;
+							break;
+						}
 					}
 					collect_arguments_into_tree:{
 						function collectIntoTree(startIndex = 0,localMaxProceedence,exps,isTypeSyntax = false):mutates<exps>{
@@ -1029,7 +1036,7 @@ const fs = Deno;//require("fs");
 										[[Expression.Operator,Expression.Bracket],()=>false],
 										[[Expression.Label,Expression.Value],()=>true],
 									])){return {i}};
-									selfExp.operatorData.proceedence.forEach((argProceendence,j)=>{//note: j:0|1 ; is the index of the argument
+									selfExp.operatorData.proceedence.forEach((argProceendence,j)=>{//for each argument ; note: j:0|1 ; is the index of the argument
 										if(!(selfExp.operatorData.proceedence[0] == proceedence && selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration)){
 											if(argProceendence != proceedence)return;
 										}
@@ -1112,7 +1119,7 @@ const fs = Deno;//require("fs");
 						}
 						return v;
 					});
-					adjacentSides[1].wordSymbol.throwError("syntax", `double expression. missing expression sepparator or operator. Expected '.', ';', or an operator. Found '${exps[1].wordSymbol.word}'`, e=>Error(e));//TODO: make this error identify the 2 adjacent wordSymbols
+					adjacentSides[1].wordSymbol.throwError("syntax", `double expression. missing expression sepparator or operator. Expected previous '.', ';', or an operator. Found '${exps[1].wordSymbol.word}'`, e=>Error(e));//TODO: make this error identify the 2 adjacent wordSymbols
 				}
 				return {index:i,expression:exps[0]};
 			},
@@ -1782,7 +1789,7 @@ const fs = Deno;//require("fs");
 			}
 		}
 	//----
-function printTree(abstractSyntaxTree){//a TEST function for debugging
+function printTree(abstractSyntaxTree):String{//a TEST function for debugging
 	let len = 0;
 	let string = (function forEach(a,i=-4,a1){
 		len++;
