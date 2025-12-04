@@ -1004,21 +1004,163 @@
 			//note: language does not need 'dyn' keyword. functions are typed by their return values
 		};
 		add := \##+##;
-//4.2.1:
-	struct := \{x:I;y:I};
-	trait := /{a:\;b=};
-//4.2.2:
-	//notes on design so far:
-		//problems with previous language design:
-			//lack of nice rust-like struct constructors.
-		//some of the language strengths so far:
-			//very reduced naming variables.
-			//terse
-			//lack of brackets for keyword expressions
-			//fast to write, (harder to read)
-			//makes a good, terse advent of code, language
-			//assign&declareing parameters, parts of keyword-statements, properties on objects &/| structs.
-	//ealy return with '?':
-		exp ?
-	//postfix not operator
-		short_exp!
+	//extra updates:
+		//4.2.1:
+			struct := \{x:I;y:I};
+			trait := /{a:\;b=};
+		//4.2.2:
+			//notes on design so far:
+				//problems with previous language design:
+					//lack of nice rust-like struct constructors.
+				//some of the language strengths so far:
+					//very reduced naming variables.
+					//terse
+					//lack of brackets for keyword expressions
+					//fast to write, (harder to read)
+					//makes a good, terse advent of code, language
+					//assign&declareing parameters, parts of keyword-statements, properties on objects &/| structs.
+			//ealy return with '?':
+				exp ?
+			//postfix not operator
+				short_exp!
+		//4.2.3 example: removing types by default
+			//idea: no types ; use 'short_exp:exp' for assignment
+			//- special class syntax
+			//- no 'foo{}' function calls, only 'foo()','foo,' etc... and 'array[]'
+			//- normal ternary funcitons 'a?b?:c' or 'b?a?|c'
+			//'mod' is not needed so much 
+			//idea: use '/exp' for classes, use 'keyword exp { exps }' patterns aswell as 'keyword exp => exp'
+			a:b;
+			a:T=b;
+			1 + 1;
+			//reference
+				//'key ref exp'
+				this ref (getThis:this);
+				//the 'key' is only usable inside the ref's expression
+				//syntax is similar to the 'key in exp' pattern
+			//classes
+				Class:/(//use '/exp' for class function ; a class adds properties to an object
+					//first argument referse to the instance object 'self'
+					method1 : \#this.$(*I)[0] + this.$(*I)[1];
+					method2 : \"hello world {a}";
+					defaultProperty : (4;5);
+				);
+				// '/exp' the exp is a prototype. The class function has 1 argument for this and combines the value of '#0' with the return value
+				classPollyfill:\classPrototype:
+					Self ref \data:{
+						newObj:(*:classPrototype;*:data);
+						newObj.$Self : newObj//'a:b' returns 'b' ; similar to 0xmin, cannot add properties with 'a.b=c' only with 'a.b:c'
+					}
+				;
+				mergeObject:\##|>/##;
+				instance:Class($*I:[2;3]);
+				assert instance.method1() == Class;
+				assert instance.$*I == [2;3];
+				Car:/(displayNumber:\print,##);
+				CarBody::(Window:\$$;Frame:\$$);
+				myCar : Car(Wheel();CarBody());
+			//lazy expressions
+				//add a '`' for '`exp' to make an expression lazly evaluated
+				//lazy expressions are only evaluated when a property or call action is applied to the lazy expression.
+				//use 'exp`' to turn a lazy expression into a iterator
+				y_combinator : \f:{\#x,x},\f(`#x,x);
+				factorial : y_combinator,\#fact:\#n==0?1?|n*fact(n-1);
+				//without lazy version
+					factorial : fact ref \#n==0?&1?|n*fact(n-1);
+				nextedLazyExpression : ``````5;
+				lazyFullEvaluator:\lazy:{
+					//(*):(lazy);
+					lazyIter:!< {
+						while lazy is Lazy =>
+							!> lazy = lazy`;
+						;
+					};
+					for
+						print,
+							in lazyIter;
+					return lazy;
+				}
+				//idea: use 'param\exp' and '(params)\exp' instead of '\(params):exp'
+			a:7;
+			if 5 > a%10 > 0 {//in Set:[1,4]
+				print,"low:{a}";
+			} else {
+				print,"high:{a}";
+			};
+			//objects
+				object:(a:;b:;c:);
+				(a;b;c):object;
+				newObject:(a;b;c);
+				assert (a;b) == (a;a:a;b;b:b);
+			//type syntax:
+				//use '::' for type annotations
+				//'key::type_exp' states the type of a key
+				//'exp::type_exp' states the type of an expression
+				number::Number:2;
+				SomeStruct::\/(a;b;c);
+			//public/private fields
+				//similar to JS we can use '@' to denote private keys, and private blocks
+				//if a block is private it limits it to the local 'mod' block
+				object : mod {
+					publicField:2;
+					@privateField:3;
+					privateField:4;
+					assert @privateField != privateField;
+					(publicValue;@privateValue);
+				};
+				//using symbols instead
+				object:{
+					publicKey:$$;
+					$publicKey:2;
+					($publicKey);
+				};
+			//function arguments
+				//variables declared inside function arguments 'foo( ... )' are used as named arguments
+			//blocks
+				{};exp;//is the same as
+				{} exp;//do not need a semi-colon after '{}' brackets
+			//references '&short_exp'
+				//assignment clones an object by default
+				//'&object' can be used to take a reference to one
+				obj:(1;2;3);
+				obj[3] = obj;//clones obj, and assigns it to obj[3] ; this prevents circular references
+				assert obj[3] = (1;2;3);
+				assert obj = (1;2;(1;2;3));
+				obj[3] = &obj;
+				//'&' references are not cloned
+			//idea: can use '#' aswell as '##' for unnamed parameters
+			//idea: can use '@' instead of '#@', 'for in [1,2]=>#@'
+			//idea: to turn this into a strongly typed language:
+				//use 'short_exp::type_short_exp' to annotate expressions or variables
+				//can also use '#key:type_short_exp' for parameters
+					//in Rust only function parameters need to be typed
+			//idea: allow '#' instead of '##', '#label' now requires no spaces inbetween '#' and 'label'
+			//idea: function syntax
+				\a:b:c=a+b+c;
+				//instead of 
+				\(a;b;c)=a+b+c;
+			//proposal: swap ';' and ',' ; ',' ends expressions, ';' is for fuction calls ; this was done for eugonomics with typing arrays []
+			//examples:
+				normalDistrabution:\##.>(0,\##+F.random);
+				update:ref{$*:[];$Fn:\this.<};
+				dt:1/60;
+				game:{
+					Bullet:/ref(
+						coords:[0;0];
+						velocity:[0;0];
+						update:\
+							coords.=,\##+velocity[##]*dt;
+							objects.=,\##.coords.>(0;coords);
+						;
+					)
+				}
+				sum:\#.>,\#+#;
+				sum=\a=a.>,\s:v=s+v;
+//4.3:
+	//design idea:
+		//quick to write
+		//terse
+		//reduce naming things
+		//little to no typing
+	//examples:
+		a:2;
