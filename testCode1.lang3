@@ -1163,4 +1163,21 @@
 		//reduce naming things
 		//little to no typing
 	//examples:
-		a:2;
+		//assignment
+			a:2;
+			b:c:3;
+		//function
+			foo:\#+#;
+			functions:(
+				\a=a;
+				mul:\a:b=a*b;
+				baz:\a:b:c=;
+			);
+			destructured_function:\()
+			sum:\#.>0<:\#+#;
+		//function calls
+			a:\;b:\;c:\;d:\;
+			a,b,c == a(b)(c);
+			a<|b<|c == a(b(c));
+			a<|b|>c|>d == a(d(c(b)));
+			a|>b|>c == a(c(b));

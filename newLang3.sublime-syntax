@@ -98,7 +98,7 @@ contexts:
       pop: true
 
     #reference and/or declare parameter
-    - match: '#(#|\s*{{label}}|[@?](?:{{label}})?)|#' # '#a' '#@b' '##'
+    - match: '#(#|\s*{{label}}|[@?](?:{{label}})?|\.\.(?:{{label}})?)|#' # '#a' '#@b' '##'
       scope: variable.parameter
     #operators
     - match: '{{match_operator}}'

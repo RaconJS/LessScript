@@ -1,2 +1,33 @@
-a:=2;
-a,
+//idea: `a.$*` ; reflection pattern ; gets all keys in object as a sort of list ; `a.$*.=` maps only accessable keys
+//idea: `#..` returns rest of arguments in a function
+	//TODO: consider using `#$*` and `#@*` instead
+//idea: `#..` or `#..label` for all arguments of function`
+//idea: `args..` to inject all symbols into function arguments
+//idea: `$$` = unique symbol ; `$$mod` = unique to the module ; `$$$` = static unique symbol
+type:$$;
+class:\prototype=
+	ref \data={
+		#@Self;
+		ref(
+			$* : prototype.$*.=,\method=\method,#@this<:..#..;
+			$* : data;
+			$type:Self;
+		)
+	}
+;
+A:ref class,\ref(//note: the parameter '#@' or 'ref' can be lazilly evaluated to allow for this ; will through an error if 'self' is read before definision
+	self:#@;
+	Self:#@;
+	foo:\##.a;
+	bar:\##.num + 5;
+);
+A:ref /ref(
+	self:#@;
+	Self:#@;
+	foo:\##.a;
+	bar:\##.num + 5;
+);
+B:/(
+	print_self:\##|>print;
+	add:\##.num + ##;
+);
