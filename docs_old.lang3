@@ -1177,7 +1177,7 @@
 			sum:\#.>0<:\#+#;
 		//function calls
 			a:\;b:\;c:\;d:\;
-			a,b,c == a(b)(c);
+			a,b,c == a(b)(c) == (a(b))(c)
 			a<|b<|c == a(b(c));
 			a<|b|>c|>d == a(d(c(b)));
 			a|>b|>c == a(c(b));

@@ -30,7 +30,7 @@ variables:
     iter|yeild|
     await|async|
     assert|assume|
-    is|
+    as|is|
     defer
   )\b'
   match_operator: '[+\-*%&|^~]{1,2}|/|>=|=<|[!=]=|[¬!<>?:¿]|@\s*\*|\$\s*\*|@|='
@@ -72,7 +72,9 @@ contexts:
     #function declaration
     - match: '\s*{{match_lambdaSymbol}}' #lambda
       scope: keyword.declaration.function.lang
-
+    - match: '(?<={{match_lambdaSymbol}})\s*\w+(?:\s*#\s*\w+\b)*\s*(?=:)'
+    - match: '(?<=\w|#|[\)\]\}]|\+\+|/)\s*(/)' # '/'
+      scope: keyword.operator.lang
     - match: '(?<!\w|[\)\]\}]|\+\+|/)\s*(/)(?![/*])' # '/class'
       scope: keyword.declaration.function.lang
     - match: '(?<!\w|[\)\]\}]|\+\+)\s*(^)' # ^enum'
@@ -98,7 +100,7 @@ contexts:
       pop: true
 
     #reference and/or declare parameter
-    - match: '#(#|\s*{{label}}|[@?](?:{{label}})?|\.\.(?:{{label}})?)|#' # '#a' '#@b' '##'
+    - match: '#(#|\s*{{label}}|[@?%/\\](?:{{label}})?|\.\.(?:{{label}})?)|#' # '#a' '#@b' '##' '#\' '#/'
       scope: variable.parameter
     #operators
     - match: '{{match_operator}}'
@@ -112,12 +114,8 @@ contexts:
           - meta_scope: string.quoted.double.lang
           - match: '"'
             pop: true
-    - match: '"' #formated string
-      push:
-        - - include: format_string
-          - meta_scope: string.quoted.double.lang
-          - match: '"'
-            pop: true
+    - match: '"' #formated string ; includes "{exp}" pattern
+      push: format_string
       captures:
         1: string.quoted.double.lang
         2: constant.character.escape.lang
@@ -173,12 +171,14 @@ contexts:
   format_string:
     - meta_scope: string.quoted.double.lang
     - match: '{'
-      scope: punctuation.section.group.begin.lang
+      scope: punctuation.section.group.start.lang
       push:
         - - meta_scope: source.lang
           - include: mainContext
     - match: '{{string_special}}'
       scope: constant.character.escape.lang
+    - match: '"'
+      pop: true
   multi_line_string:
     - meta_scope: string.quoted.double.lang
     - match: '"\1'

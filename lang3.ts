@@ -80,8 +80,17 @@ function swapBrackets(){
 			throw errorFunc("UNIMPLEMENTED:" + msg);
 		}
 	}
-	function forBail(length,onError_default=undefined){
-		//example: let n=forBail(array.length);while(true){n();}
+	function todo(msg = "",errorFunc = e=>Error(e)){
+		if(debugMode){
+			throw errorFunc("TODO:" + msg);
+		}
+	}
+	todo.flaggedErrors = {};
+	todo.silent = function(name?:String,state?:Any,errorFunc = e=>Error(e)){
+		todo.flaggedErrors[name] = {state,error:errorFunc};
+	}
+	function forBailOld(length,onError_default=undefined){
+		//example: let n=forBailOld(array.length);while(true){n();}
 		let i_bail = 0;
 		return function next(onError=onError_default){
 			if(debugMode)if(i_bail++>length){
@@ -90,12 +99,20 @@ function swapBrackets(){
 			}
 		}
 	}
+	function* forBailGenerator(length,onError_default=undefined){
+		//example: for(let _ of forBailGenerator(array.length)){...}
+		for(let i = 0; i < length;i++)yield i;
+		if(debugMode){
+			if(onError_default)onError_default(i_bail);
+			throw Error("BAILED");
+		}
+	}
 	function match<V,T>(value:V,setOfCases:MatchCase[],defaultCase:(v)=>T):T{
 		"use strict";
 		//type MatchCase=[(V[]|V->bool), V->T]
 		let i = -1;
 		let _case:MatchCase;
-		let tryNext = forBail(setOfCases.length);
+		let tryNext = forBailOld(setOfCases.length);
 		while(++i < setOfCases.length){
 			tryNext();
 			_case = setOfCases[i];
@@ -120,7 +137,7 @@ function swapBrackets(){
 		let i = -1;
 		let _case:MatchCase;
 		let unhandledFlags = [];
-		let tryNext = forBail(setOfCases.length);
+		let tryNext = forBailOld(setOfCases.length);
 		unimplemented("need to convert the code to match flags instead of cases");
 		unimplemented("while loop should run all of the valid cases, unlike")
 		//while(++i < setOfCases.length){
@@ -288,6 +305,8 @@ const fs = Deno;//require("fs");
 					"string",
 					"number",
 					"bool",
+				// label
+					"operator",//operators e.g. '>' '=' in '.>' '.=' ; allows for 'a.>foo' --> 'b.>,foo'
 				// operator
 					"comparitor",
 					"pipeline",// '|>' '<|' ':>' '<:'
@@ -509,8 +528,8 @@ const fs = Deno;//require("fs");
 			//static nofix = Symbol("'(+)'");
 			static left = 0;//:Symbol("param ->")
 			static right = 1;//:Symbol("<- param")
-			afix;//:[]OperatorData & infix|postfix|prefix|nofix;
-			proceedence:Number[2];
+			afix;//:u2 & []OperatorData & infix|postfix|prefix|nofix;
+			proceedence:Number[2];//for left and right args
 			numOfArgs;//:number
 			isInverseBracketing;//:bool
 			includes;//:string[] ; used for 'if' for 'if condision then else exp' -> `if[condision,then,else[exp]]`
@@ -563,6 +582,7 @@ const fs = Deno;//require("fs");
 			return operators;
 		}
 		const operatorProceedence = //:Object & Map(string->{prefix:OperatorData?,infix:OperatorData?,postfix:OperatorData?})
+			//optionalArg:[is_left_arg_optional:bool,is_right_arg_optional:bool];
 			intoOperatorProceedence([//:{[string]:OperatorData}[] ; note: '\x00's are ignored to allow for duplicate entries with the same preceedence
 				{
 					"..."     :{afix:OperatorData.AfixType.nofix},
@@ -701,7 +721,7 @@ const fs = Deno;//require("fs");
 				{
 					"="       :{afix:OperatorData.AfixType.infix,isInverseBracketing:true},//'a=(b=c)' instead of '(a=b)=c'
 					"=\x00"   :{afix:OperatorData.AfixType.prefix,isInverseBracketing:true},//'a=(b=c)' instead of '(a=b)=c'
-					"\\"      :{afix:OperatorData.AfixType.prefix},//function
+					"\\"      :{afix:OperatorData.AfixType.prefix,optionalArg:[0,1]},//function
 					"/"       :{afix:OperatorData.AfixType.prefix},//class
 					"`"       :{afix:OperatorData.AfixType.prefix},
 					"if"      :{afix:OperatorData.AfixType.prefix,includes:["=>"]},
@@ -824,7 +844,7 @@ const fs = Deno;//require("fs");
 			expressions(startIndex,parent):Expression[]{//:(Number,parent:WordSymbol&{contence:WordSymbol[]})->parent & mutate parent
 				let words = parent.contence;//:WordSymbol[]
 				let i = startIndex;
-				let tryNext = forBail(words.length);
+				let tryNext = forBailOld(words.length);
 				let expressions = [];
 				while(words && i < words.length){
 					tryNext(()=>console.error("TEST:"+words+" "+words[i]+" "+i));
@@ -883,7 +903,7 @@ const fs = Deno;//require("fs");
 								assert(!!possibleAfixes,`unhandled case for operator '${word.word}' in \`operatorProceedence\``);
 								if(words[i-1]?.word == "." && "><=|".includes(word.word)){//for 'array.=(mapFunction)' ; converts into label
 									word.type = SyntaxTree.type.label;
-									word.subtype = undefined;
+									word.subtype = SyntaxTree.subtype.operator;
 									return new Expression.Label(word);
 								}
 								let num = !!possibleAfixes.prefix + !!possibleAfixes.infix + !!possibleAfixes.postfix + !!possibleAfixes.nofix;
@@ -990,9 +1010,10 @@ const fs = Deno;//require("fs");
 							break;
 						}
 					}
-					collect_arguments_into_tree:{
-						function collectIntoTree(startIndex = 0,localMaxProceedence,exps,isTypeSyntax = false):mutates<exps>{
+					collect_arguments_into_tree:{//handles precedence
+						function collectIntoTree(startIndex = 0,localMaxProceedence,exps,isTypeSyntax = false,isParameter = false):mutates<exps>{
 							const excludeAssignmentOperator = isTypeSyntax;
+							const excludeDeclarationOperator = isParameter;
 							function isOptionalArgument(exp,j){
 								return exp?.operatorData?.optionalArg?.[j] || exp?.wordSymbol?.subtype == SyntaxTree.subtype.declaration;
 							}
@@ -1007,23 +1028,50 @@ const fs = Deno;//require("fs");
 										exps[i].afix = Expression.AfixType.nofix;
 										return true;
 									}
-									else exps[i].afix = Expression.AfixType.postfix;
+									else exps[i].afix &= Expression.AfixType.postfix;//`{}` --> nofix , `()` and `[]` --> postfix for `foo(...)` and `bar[...]`
 								}
 								return false;
 							}
 							for(let i = startIndex; i < exps.length; i++){
 								let exp = exps[i];
 								if(excludeAssignmentOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.assignment)break;
+								if(handleBracketAfix(exps,i))continue;
 								if(exp.afix != Expression.AfixType.prefix)continue;
 								if(exp.args[1])continue;
-								if(handleBracketAfix(exps,i))continue;
-								collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.declaration);
-								let argExp = exps[i+1];
-								let argProceendence = argExp?.operatorData?.proceedence?.[0] ?? Expression.defaultProceedence;
-								if(!isOptionalArgument(exp,1) && (exp.operatorData.proceedence[1] < argProceendence || !argExp))
-									missingOperatorError(exp,argExp,1);//:throws error
+								function tryGetNewAddableArg():Result<Expression,Throw>{//may return an argument that can be pushed to the parent expression's exp.args
+									let argExp = exps[i+1];
+									let argProceendence = argExp?.operatorData?.proceedence?.[0] ?? Expression.defaultProceedence;
+									if(!isOptionalArgument(exp,1) && (exp.operatorData.proceedence[1] < argProceendence || !argExp))
+										missingOperatorError(exp,argExp,1);//:throws error
+									exps.splice(i+1,1);
+									return argExp;
+								}
+								if(exp.wordSymbol.word == "\\"){//handle function parameter pattern `\exp#exp#exp:exp;`
+									let args = [];
+									exp.paramSeparators= [];//:Exp<"#">[]
+									exp.paramEnder = undefined;//Exp<":">?
+									collectIntoTree(i+1,operatorProceedence["="].prefix.proceedence[1],exps,false,true);//collects all parameters into `#names`s
+									for(let _ of forBailGenerator(exps.length)){
+										if(!exps[i+1])break;
+										if(exps[i+1].wordSymbol.word == ":"){
+											exp.paramEnder = exps.splice(i+1,1)[0];
+											break;
+										}
+										let argExp = tryGetNewAddableArg();
+										args.push(argExp);
+										loga("??")
+										if(exps[i+1] && exps[i+1].wordSymbol.word == "#"){//'#' act like commas to separating parameters
+											continue;
+										}
+										break;
+									}
+									exp.args = args;
+									loga(printTree([exp]))
+									todo();
+								}
+								collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.declaration,exp);
+								const argExp = tryGetNewAddableArg();
 								exp.args[1] = argExp;
-								exps.splice(i+1,1);
 								//note: do not `break;` here, the call to `collectIntoTree()` does not cover all `exps` ; consider removing this comment if 'collectIntoTree' was removed from this for loop
 							}
 							for(let proceedence = 0; proceedence <= localMaxProceedence; proceedence++){
@@ -1111,7 +1159,7 @@ const fs = Deno;//require("fs");
 					if(0)console.error(printTree(exps));
 					let adjacentSides:Expression[2] = [exps[0],exps[1]].map((v,i)=>{
 						let otherSide = 1 - i;
-						let tryNext = forBail(v.wordSymbol.errorData.file.words.length);
+						let tryNext = forBailOld(v.wordSymbol.errorData.file.words.length);
 						//assume: v:Tree structure
 						while(v instanceof Expression.Operator && v.args[otherSide]){
 							tryNext();
@@ -1338,7 +1386,7 @@ const fs = Deno;//require("fs");
 						let propertiesAsExps:Stack&Exp[] = [exp.args[1]];
 						//note: this could instead be done using recursion instead of a loop
 						//assume: exp:Tree
-						let tryNext = forBail(1000);
+						let tryNext = forBailOld(1000);
 						let properties:{key:Key,exp:Expression&'key'}[] = [];//['b','c'] in 'a.b.c'
 						let baseObject:Option<Exp>;//'a' in 'a.b.c = d' can also be infered e.g. 'a:Option = .None,;'
 						!function forEachKey(exp:Exp&"."){
@@ -1829,5 +1877,5 @@ let {data:a,fileName} = (()=>{
 	return {fileName,data};
 })();
 //a="a.b := 2;Coords := \(*$$:;#x:=0;#y:=0);";
-if(1)compile(a??"");
+if(1)compile('\\a#b=0#c:10');
 else try{compile(a)}catch(e){console.error(e+"")};
