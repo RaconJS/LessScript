@@ -1,5 +1,10 @@
 //TODO: update to remove most references to types since they may use old, invalid syntax 
+//note:
+	//refer to testCode.lang3 for a more up to date features;
+	//this document is however more organised than testCode.lang3
+
 //4.3:
+	//note: any mention of 'a:=b' pattern or 'value:Type' patterns are obsilete old syntax ; ':' is always declaration, '::' is type annotaions
 	//design ideas:
 		//quick to write
 		//terse
@@ -19,28 +24,32 @@
 			destructured_function:\()
 			sum:\#.>0<:\#+#;
 		//function calls
-			a:\;b:\;c:\;d:\;foo:\;bar:\;//using these functions for examples
+			a:\;b:\;c:\;d:\;foo:\;bar:\;//using these functions for examples ; `a:\` == `let a = ()=>undefined` in javascript
 			foo(a;b;c);foo[a;b;c];
 			a,b,c == a(b)(c);//pattern: `a,b` `short_exp,short_exp` ; but excludes `<|` and `|>` in the argument side
-			a<|b<|c == a(b(c));
+			a<|b<|c == a(b(c));//'<|' consumes big on the right
 			a<|b|>c|>d == a(d(c(b)));
-			a|>b|>c == a(c(b));
+			a|>b<|c == b(a)(c);
+			a|>b,c,d == b(a)(c)(d);
+			a<|b,c,d == a(b(c)(d));
 			
 			a,b<:c == a(b;c);
 			a<|b<:c == a(b;c);
 			a,b|>c<:d == c(a(b);d);
 			a,b<|c<:d == a(b(c;d));
-			a<|b,c<:d == a(b(c);d);
 
 	//patterns:
 		//short_exp
 			//block
-				{exps}//returns the result of the last expression
+				{exps}//returns the result of the last expression (similar to the Rust language)
 				{=exp; exps}//the first exp is executed last; note: if it contains any '#lbl's then they will still will address the first parameters
-				{:key_exp; exps} ; {:key_exp=exp;exps}//first declares 'key_exp' as 'exp' ; then executes 'exps' and finally assigns 'exp' to the 'key_exp' (if where is an '=exp') and returns the value of'key_exp'
+				{:key_exp; exps} ; {:key_exp=exp;exps}//first declares 'key_exp'; then executes 'exps' and finally assigns 'exp' to the 'key_exp' (if where is an '=exp') and returns the value of'key_exp'
+					//[TODO]:resolve if `=exp` is run at the start or end
 				{::Type_exp; exps} //types annotates a block
 				{::Type_exp:key_exp=exp; exps}//these patterns can be combined
 					{:: Float : v += a+b; v="a"; a:"b"; b:"c"} == "abc"
+					//is the same as
+					{:: Float; v:; v="a"; a:"b"; b:"c"; v+=a+b} == "abc"
 				//e.g.
 					{:key_exp;exps} == {key_exp:;exps;key_exp};
 					{:key_exp=exp;exps} == {key_exp:exp;exps;key_exp};
@@ -48,14 +57,14 @@
 			//array
 				[exps]
 				//same syntax as struct (exps) except:
-					key_exp:exp;//adds an index with an associated named property
+					key_exp:exp;//adds both an indexed item and an associated named property
 			//struct
 				(exps)
 				//containing patterns:
 					(
-						key_exp:exp;
+						key_exp:exp;//property
 						@key_exp:exp;//private property ; can be referenced with '@key_exp'
-						value_exp;
+						value_exp;//tuple-like item
 					)
 				//value_exp: expressions add to the tuple part.
 					exp
@@ -161,10 +170,10 @@
 				//symbols injection ; '$:' '' ; injects symbols of
 					$:exp
 					@:exp//private symbols of
-					$=exp//auto_assignment
+					$=exp//auto_assignment ;
 					//e.g.
-						foo:(a:2;b:3;);
-						($:foo) == ();
+						foo:(a:2;b:3);
+						($:foo) == (a:2;b:3);
 				//hoisting
 					key:*
 				a.b=c//assigns property similar to Javascript {mutating referenced object 'a'} ; if key 'b' is not on 'a's type and 'a's struct is local, then it is added to the struct and object.
@@ -175,6 +184,7 @@
 				destructure=exp
 				//destructure:
 					short_exp //'a.b.c = exp' == 'c = {exp}.a.b.c'
+					key:new_variable
 					(destructures)
 					[destructures]
 					//destructures:
@@ -182,8 +192,8 @@
 						destructures destructure
 					//note: can be recursive, e.g. [a;[b;(c;d)]] = [1;[2;(c=3;d=4)]];
 					//e.g.
-						\(obj):=(
-							(a;[b;x.y.z=(c;w=d)]) := obj;
+						\(obj):(
+							(a;[b;x.y.z=(c;w=d)]) : obj;
 							//or can also put in types
 							(a;[b;x.y.z:(c:;w:)=(c;w=d)]) : (a:;[_;(x:(y:(z:(c:;w:(d)))))]) = obj;
 						);
@@ -239,6 +249,7 @@
 				exp?//ealy return ; same as `return exp`
 				exp?#@//breaks from the nearest owner of `#@`
 					//can break from for,
+					exp?key_exp//breaks to the owner of the scope where the 'key_exp' was declared
 				exp?!//returns if null or error value
 			//enum
 				Enum (
@@ -298,7 +309,7 @@
 						! ++ -- + -
 				key += exp
 				key :+= exp
-				key : type += exp
+				key :: type : += exp
 				//type casting '>:'
 					exp >: short_short_type_exp
 					//'a >: T' is equivelant to 'a.into::<T>()' from Rust, where as 'a.$T' is more like 'a as T' from Rust
@@ -306,7 +317,7 @@
 					//e.g.
 					a := 45:<Int;
 						ascii_code :U8= "a"U8;
-				//specall assign with operator operators '>>='
+				//call assign with operator operators '>>='
 					key >>= foo_exp//same as 'key = foo_exp{key}'
 			//'¬'
 				exp ¬ exp
@@ -498,9 +509,13 @@
 				//function:
 					## or #name or # //function parameter
 					#.. //array of the rest of the arguments in a function
-				#? or #?name//if statement
-				#@ or #@name//miscilanious parameter
-			#/ or #/name //self reference class
+				#? or #?name//if statement's argument
+				#@ or #@name//miscilanious parameter ; some other controll blocks use this parameter
+				//'#@' and '#@name' always gets the next '#@' parameter so '(#@;#@)' refers to 2 different parameters
+					a:10;
+					b:();
+					if a=>if b=>(#@;#@)
+			#/ or #/name //Self reference class
 			#\ or #\name //self reference function
 			
 			{.}//'.' returns the nearest `(...)` scope or class instance `/(...)`
@@ -518,6 +533,8 @@
 			\ a=exp # b=exp # c=exp : exp;
 			\$Foo # $bar://note that in this context (of the start parameters section of a function) the '#'s act more like separators between parameters
 			//arguments can be declared later with '#key' pattern
+		//'/' classes:
+			/()
 		//references '&':
 			exp&; //allows returning assignable values from functions
 			&key_exp:exp;//variable that is linked to another variable ; the linked variable
@@ -576,3 +593,59 @@
 				else
 					baz,
 				;
+		//'*' wild card symbol
+			//reflection:
+				short_exp.$*//returns a list of all properties&symbols of 'short_exp' as key-value pairs
+			
+			//e.g.
+				$* = (a:2;b:3;4);//ext
+				assert a==2 && b==3
+				//same as 
+				(a;b;:c)=(a:2;b:3;4);//[TODO]:check if this syntaax
+			
+			@* = (@a:2;@b:3;4);//gets public keys
+		//array properties
+			//'.=' map
+				[1;2;3].=\#value*2//map
+				//same as
+				[1;2;3].=,\#value*2//the ',' is optional and the function call can be implied without it
+				//optimisation note: a resulting array is not created if the result is not consumed by anything e.g. as a non-last expression in '{...}', '£'
+			//'.<' repeat
+				evens : 5.<\#index*2
+				assert evens == [0;2;4;6;8]
+			//'.>' reduce
+				start_value:4
+				[1;2;3].>start_value<:\#sum+#value//starts with sum == start_value, and value == 1st item
+				[1;2;3].>\#sum+#value//starts with sum == 1st item, and value == 2nd item
+
+//4.4.1: docs rewrite
+	//design philosophy:
+		//terse short code
+		//unnamed paradigm: reduced naming things
+			//one of the 2 hardest things in programming is naming things
+		//dry:
+			//reduced need to repeat names
+		//weakly typed
+		//C-like ; uncaring of tab indentation
+	//patterns:
+		//note:
+			//using `A__B` for labeled pattern types e.g. `A__exp` is of type `exp`
+		//short_exp
+			//block
+				{exps}//returns the last expression ; (similar to in Rust)
+				{::type_exp:short_exp=final__exp;exps}//declared
+				{:short_exp;exps}//declares `short_exp` and returns `short_exp` at the end 
+				{=exp;exps}//evaluates `exp` last and returns it's result
+			//array
+				[exps]
+				//e.g.
+					[1;2;3]
+					[a:1;b:2;3;4;c:5;6]
+			//struct/tuple
+				(struct_exps)
+				//e.g.
+					(a:2;b:4;c:6;1;2;3)
+					(a.b.c == 2)
+				//special patterns:
+					//declaration pattern used for adding properties to struct
+		//exp

@@ -1011,6 +1011,29 @@ const fs = Deno;//require("fs");
 						}
 					}
 					collect_arguments_into_tree:{//handles precedence
+						function tryCollectParameterExp(startIndex = 0,exps):Option<Expression>&mutates<exps>{//'a', '[a,b,c]' ; returns Some<Expression> if succesfully found a key_exp
+							const i = startIndex;
+							if(!match(exps[i].wordSymbol.type,[
+								[[
+									SyntaxTree.type.whiteSpace,
+									SyntaxTree.type.comment,
+								],()=>{assert.impossibleCase("should not have white space at this stage (parsing into AST)")}],
+								[[
+									SyntaxTree.type.value,
+									SyntaxTree.type.label,
+								],()=>true],
+								()=>todo()
+								//"whiteSpace",
+								//"comment",
+								//"value",//bool|number|string|special
+								//"label",
+								//"bracket",// '(' ')'
+								//"operator",
+								//"sepparator",//';'
+								//"constant",
+							])){return null}
+							//handle dot operator
+						}
 						function collectIntoTree(startIndex = 0,localMaxProceedence,exps,isTypeSyntax = false,isParameter = false):mutates<exps>{
 							const excludeAssignmentOperator = isTypeSyntax;
 							const excludeDeclarationOperator = isParameter;
@@ -1050,24 +1073,37 @@ const fs = Deno;//require("fs");
 									let args = [];
 									exp.paramSeparators= [];//:Exp<"#">[]
 									exp.paramEnder = undefined;//Exp<":">?
-									collectIntoTree(i+1,operatorProceedence["="].prefix.proceedence[1],exps,false,true);//collects all parameters into `#names`s
+									let hasEndParam:Bool;
 									for(let _ of forBailGenerator(exps.length)){
 										if(!exps[i+1])break;
-										if(exps[i+1].wordSymbol.word == ":"){
-											exp.paramEnder = exps.splice(i+1,1)[0];
-											break;
+										let expProceedence:int = operatorProceedence[exps[i+1].wordSymbol.word]?.nofix?.proceedence?.[0]??0;//check if exp is a parameter key
+										const keyProceedence:int = operatorProceedence["="].prefix.proceedence[0];//left side of `=`, i.e. `a` in `\a=2:` or `\a:`
+										if(expProceedence <= keyProceedence){
+											collectIntoTree(i+1,null,exps,false,true);//collects all parameters into `#names`s
+
 										}
 										let argExp = tryGetNewAddableArg();
 										args.push(argExp);
-										loga("??")
+										i++;
+										if(exps[i+1].wordSymbol.word == ":"){
+											exp.paramEnder = exps.splice(i+1,1)[0];
+											hasEndParam = true;
+											break;
+										}
 										if(exps[i+1] && exps[i+1].wordSymbol.word == "#"){//'#' act like commas to separating parameters
+											i++;
 											continue;
 										}
 										break;
 									}
+									if(hasEndParam){//`\a#b#c:`
+
+									}
+									else{//`\a`
+
+									}
 									exp.args = args;
 									loga(printTree([exp]))
-									todo();
 								}
 								collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.declaration,exp);
 								const argExp = tryGetNewAddableArg();
@@ -1186,8 +1222,8 @@ const fs = Deno;//require("fs");
 		const {Expression} = parseIntoOperatorSyntaxTree;
 		class DeclarationAssignmentPattern extends Expression.Operator{
 			constructor(data={}){super(data);Object.assign(this,data)}
-			isDeclaration:bool;
-			isAssignment:bool;
+			isDeclaration:bool;//'a: ...'
+			isAssignment:bool;//'a= ...' or 'a:b'
 			wordSymbol:WordSymbol;
 			wordSymbols:[WordSymbol?,WordSymbol?];
 			typeArg?:Expression;
@@ -1196,7 +1232,7 @@ const fs = Deno;//require("fs");
 			toTree(){
 				return [this.args[0],this.typeArg,this.args[1]];
 			}
-			static isDeclarationOrAssignmentExp(exp){//':='
+			static isDeclarationOrAssignmentExp(exp){//':' '='
 				return exp instanceof this || [SyntaxTree.subtype.declaration,SyntaxTree.subtype.assignment].includes(exp?.wordSymbol?.subtype);
 			};
 			static tryFromExp(expression?:Expression):Option<Self>{
@@ -1878,4 +1914,4 @@ let {data:a,fileName} = (()=>{
 })();
 //a="a.b := 2;Coords := \(*$$:;#x:=0;#y:=0);";
 if(1)compile('\\a#b=0#c:10');
-else try{compile(a)}catch(e){console.error(e+"")};
+else try{compile(a)}catch(e){console.error(e+"")};/

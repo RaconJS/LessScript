@@ -1082,7 +1082,7 @@
 				}
 				//idea: use 'param\exp' and '(params)\exp' instead of '\(params):exp'
 			a:7;
-			if 5 > a%10 > 0 {//in Set:[1,4]
+			if 5 > a%10 > 0 => {//in Set:[1,4]
 				print,"low:{a}";
 			} else {
 				print,"high:{a}";

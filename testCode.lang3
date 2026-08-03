@@ -41,13 +41,13 @@
 	//also allows calling type methods on objects without
 	//'a:T:value'
 //idea: `a1.=a2<:a3<:foo` map function map(array1,array2,...,mapping_function:Fn(Item<array1>,Item<array2>,...)-> )
-	print<|[1;2;3].=["A";"B";"C"]<:\##+##;//["1A";"2B";"3C"]
+	print< |[1;2;3].=["A";"B";"C"]<:\##+##;//["1A";"2B";"3C"]
 //idea: `array1.>array2<:array3<:start_value<:{reduce_function:\s:v1:v2:v3:s+v1+v2+v3};`
 	//if reduce function has more than 2 args then the first args become arrays
 //idea: '#/' '#\'
 	#/ ; //idea: use '#/' to reference 'This' the class of an object
 	#\ ; //use '#\' to refer to the function itself
-		function_that_returns_itself:/#\;
+		function_that_returns_itself:\#\;
 		//note functions are always unique so an object with a function is always unique to that function/closure
 	//idea: use '#' for variables that are unique to each object instance, and can add default values
 		Vec2 : /(
@@ -95,16 +95,26 @@
 	B:/;
 	AB:/(./.$A;./.$B);
 	AB:/A+B+();
-
-
+//idea:
+	rng//random function; "random number generator" ; generates a number in range 0 <= x < 1
+	assert 2.rng, == rng, * 2
+//idea: number.= for return last value
+	assert {3.=\#i} == 2
+	number.=\index#length:{
+		assert number == length,
+		assert index < length,
+	};
+//idea: auto named parameters
+	
 type:$$;
 class_polyfill:\prototype:
 	ref \data:{
 		#@Self;
-		protoTypeInstance:prototype.$*.=,\method:\method,#@this<:..#..;
+		self:;
+		protoTypeInstance:prototype.$*.=,\method:\method,self<:..#..;
 		prototypeInstances:(prototype);//can contain the prototypes for multiple classes
 			//each prototype contain
-		ref(
+		self=ref(
 			& $* : protoTypeInstance;//injects all of protoTypeInstances
 			& $* : prototypeInstances.>,()<:\#sum.+=#value;//injects rest of references
 			$* : data;
@@ -340,3 +350,17 @@ Object_polyfill:\ref(
 				null||value
 	;
 );
+
+{
+	sort:\
+		#ints
+	;
+	normal_distribution:\{a:#.<\:0;#.=\a[#.>0<:\#+rng,]++};
+}; 
+mod signal_polyfill : {
+	signal_emit:\message:#recievers.=\#,message;
+	//let signal_emit = (message,recievers)=>recievers.map((a)=>a(message));
+	signal:(
+		signals:[]
+	);
+};
