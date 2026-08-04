@@ -2,7 +2,7 @@
 	//1263 build type class for the language's type system
 //name suggetion: quad, (the Quick Unreadable And Dirty programming language)
 //TODO: add code to support '::=' making '::' have the same syntax as ':'
-const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[@$#]\*|(?:\?&|&\?|\?\|)|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|!!!|=>|->|[!=]==|[><!=]=?|>{1,3}|<{1,2}|([+\-*%&|^~])\2?|#(?:\.\.|[#@?\./\\])|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:0[box][_0-9A-Fa-f]+|[1-9][_\d]*)\b|\.\.\.|\.\.=?|\.|\b\w+\b|\S/g;
+const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[@$#]\*|(?:\?&|&\?|\?\||\?!)|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|!!!|=>|->|[!=]==|[><!=]=?|>{1,3}|<{1,2}|([+\-*%&|^~])\2?|#(?:\.\.|[#@?\./\\])|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:0[box][_0-9A-Fa-f]+|[1-9][_\d]*)\b|\.\.\.|\.\.=?|\.|\b\w+\b|\S/g;
 	//note: float numbers are handed during syntax parting to allow for '3.<' aswell as '3.2'
 {//old code OBSILETE
 	function loga(...args){console.log(...args);}
@@ -318,6 +318,7 @@ const fs = Deno;//require("fs");
 					"declaration",// ':' ; used for ':=' syntaxes
 					"assignment",// '='
 					"typeAnnotation",
+					"return",// '?' '?!'
 			);
 			static subtype2 = EnumSymbols(
 				"regex",// 'r"..."'
@@ -373,7 +374,9 @@ const fs = Deno;//require("fs");
 									word.match(/^(?:NaN|Infinity)$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.number,afix:SyntaxTree.AfixType.nofix} :
 									word.match(/^(?:true|false)$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.bool,afix:SyntaxTree.AfixType.nofix} :
 									word.match(/^(?:null)$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.object,afix:SyntaxTree.AfixType.nofix} :
+									word.match(/^(?:([+\-*%&|^~])\1?|>{1,3}|<{1,2}|[!\/<>])$/) ? {type:SyntaxTree.type.operator} ://numerical operators
 									word.match(/^([!<>]=?|[!=]?==)$/) ? {type:SyntaxTree.type.operator} :
+									word.match(/^(?:\?[&|]|[&]\?)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.ternary} ://ternary operators
 									word.match(/^(?:=>|->)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/=$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.assignment} ://e.g. '=' '+='
 									word.match(/^:$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.declaration} :
@@ -381,7 +384,8 @@ const fs = Deno;//require("fs");
 									word.match(/^(?:[|:]>)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.pipeline,isReversed:false} ://'|>' or ':>'
 									word.match(/^(?:<[|:])$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.pipeline,isReversed:true} ://'<|' or '<:'
 									word.match(/^,$/) ? {type:SyntaxTree.type.operator} ://','
-									word.match(/^(?:([+\-*%&|^~])\1?|>{1,3}|<{1,2}|[!\/<>¬?]|\?[&|]|[&]\?)$/) ? {type:SyntaxTree.type.operator}  ://ternary operators
+									word.match(/^¬$/) ? {type:SyntaxTree.type.operator} ://'¬'
+									word.match(/^\?!?$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.return} ://
 									word.match(/^£$/) ? {type:SyntaxTree.type.operator}://void operator
 									word.match(/^(?:\.|#\.)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.dot} ://dot operator 
 									word.match(/^\.\.=?$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.interval} ://interval '1..3'
@@ -389,19 +393,19 @@ const fs = Deno;//require("fs");
 									word.match(/^@$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:\\)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:\$\$)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:\.\.\*)$/) ? {type:SyntaxTree.type.operator}:
+									word.match(/^(?:\.\.\*)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^`$/) ? {type:SyntaxTree.type.operator}:
-									word.match(/^(?:if|while|for|match|break|continue|return|catch|assert|as|is)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:mod)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^in$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:else|do)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^#(?:\.\.|[#@!?/\\])?$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.nofix} ://'#' or '##' or '#@' in: '#name' '##'
 									word.match(/^\$$/) ? {type:SyntaxTree.type.operator} ://'$type' '$key'
 									word.match(/^[$@*]\*$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.prefix}://'@*' in '@* = (a=1,b=2,c=3)'
 									word.match(/^\.\.\.$/) ? {type:SyntaxTree.type.operator} :
+									word.match(/^(?:if|while|for|match|break|continue|return|catch|assert|as|is)$/) ? {type:SyntaxTree.type.operator} :
+									word.match(/^(?:mod)$/) ? {type:SyntaxTree.type.operator} :
+									word.match(/^in$/) ? {type:SyntaxTree.type.operator} :
+									word.match(/^(?:else|do)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^\w+$/) ? {type:SyntaxTree.type.label,afix:SyntaxTree.AfixType.nofix} :
 									word.match(/^[;]$/) ? {type:SyntaxTree.type.sepparator} :
-									word.match(/^"$/) ? {type:SyntaxTree.type.symbol}://extra '"'s are caught and are handled later on
+									word.match(/^"$/) ? {type:SyntaxTree.type.symbol} ://extra '"'s are caught and are handled later on
 									//word.match(/^\S+$/) ? "symbol":
 									(()=>{throw Error(`compiler error: unhandled symbol: '${word}' on line ${line}. Either add a case using 'type:SyntaxTree.type.symbol' for this or add a proper error for this case`)})()
 								),
@@ -706,7 +710,7 @@ const fs = Deno;//require("fs");
 						"!@*"     :{afix:OperatorData.AfixType.prefix},
 					},
 					{
-						"¬"       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left},
+						"¬"       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.right},
 					},
 					{
 						"**"      :{afix:OperatorData.AfixType.infix},
@@ -1101,6 +1105,7 @@ const fs = Deno;//require("fs");
 								return exp?.operatorData?.optionalArg?.[j] || exp?.wordSymbol?.subtype == SyntaxTree.subtype.declaration;
 							}
 							function missingOperatorError(selfExp,argExp,argIndex){
+								if(0)console.error(printTree(exps));
 								selfExp.wordSymbol.throwError("syntax",`operator '${selfExp.wordSymbol}' missing ${["left", "right"][argIndex]} argument`,e=>Error(e));
 							}
 							function handleBracketAfix(exps,i){
@@ -1129,7 +1134,7 @@ const fs = Deno;//require("fs");
 							}
 							for(let i = startIndex; i < exps.length; i++){
 								let exp = exps[i];
-								if(isExpExcluded(i,true))break;
+								if(isExpExcluded(i,false))break;
 								if(handleBracketAfix(exps,i))continue;
 								if(exp.wordSymbol.type != SyntaxTree.type.operator)continue;
 								if(exp.afix != Expression.AfixType.prefix)continue;
