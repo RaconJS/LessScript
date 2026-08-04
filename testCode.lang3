@@ -235,7 +235,7 @@ struct(
 	splice:\#.- ##..# <: #..;
 	shift:\#.- 0..#;
 	unshift:\#.- , <: 0..#;
-	slice:\#[##..#]
+	slice:\#[##..#];
 	TypedEnum:/(
 		//item
 	);

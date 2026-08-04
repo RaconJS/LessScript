@@ -391,7 +391,7 @@ const fs = Deno;//require("fs");
 									word.match(/^(?:\$\$)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:\.\.\*)$/) ? {type:SyntaxTree.type.operator}:
 									word.match(/^`$/) ? {type:SyntaxTree.type.operator}:
-									word.match(/^(?:if|while|for|match|break|continue|return|catch|assert|is)$/) ? {type:SyntaxTree.type.operator} :
+									word.match(/^(?:if|while|for|match|break|continue|return|catch|assert|as|is)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:mod)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^in$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:else|do)$/) ? {type:SyntaxTree.type.operator} :
@@ -689,6 +689,8 @@ const fs = Deno;//require("fs");
 						"|"       :{afix:OperatorData.AfixType.postfix},//:boolean set type
 						"&"       :{afix:OperatorData.AfixType.postfix},//:reference type ; this type is not implemented since this is a high-level langauge
 
+						"?!"      :[{afix:OperatorData.AfixType.infix},{afix:OperatorData.AfixType.postfix}],//ealy return error/null
+						"?"       :[{afix:OperatorData.AfixType.infix},{afix:OperatorData.AfixType.postfix}],//ealy return
 
 						"++"      :{afix:OperatorData.AfixType.postfix},
 						"--"      :{afix:OperatorData.AfixType.postfix},
@@ -753,9 +755,9 @@ const fs = Deno;//require("fs");
 						"^^"      :{afix:OperatorData.AfixType.infix},
 						"~~"      :{afix:OperatorData.AfixType.infix},
 						"is"      :{afix:OperatorData.AfixType.infix},
+						"as"      :{afix:OperatorData.AfixType.infix},
 					},
 					{
-						"?"       :{afix:OperatorData.AfixType.infix},//ternary operator
 						"?&"      :{afix:OperatorData.AfixType.infix},//ternary operator
 						"&?"      :{afix:OperatorData.AfixType.infix},//ternary operator
 						"?|"      :{afix:OperatorData.AfixType.infix},//ternary operator
@@ -1113,6 +1115,18 @@ const fs = Deno;//require("fs");
 								}
 								return false;
 							}
+							function handleDotOperatorRightSideArgument(exps,i){
+								let selfExp = exps[i];
+								let argExp = selfExp.args[1];
+								if(
+									selfExp.wordSymbol.subtype == SyntaxTree.subtype.dot
+									&& argExp.wordSymbol.type == SyntaxTree.type.label
+									&& argExp.wordSymbol.subtype == SyntaxTree.subtype.operator
+									&& !(exps[i+1].afix & Expression.AfixType.operatorWithLeftArg)
+								){//'a.=b` == `a.=,b`
+									selfExp.args[2] = exps.splice(i+1,1)[0];
+								}
+							}
 							for(let i = startIndex; i < exps.length; i++){
 								let exp = exps[i];
 								if(isExpExcluded(i,true))break;
@@ -1193,6 +1207,11 @@ const fs = Deno;//require("fs");
 									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
 									const argExp = tryGetNewAddableArg();
 									exp.args[1] = argExp;
+									handleDotOperatorRightSideArgument(exps,i);
+									if(exp.wordSymbol.word == "/" && exps[i+1]?.wordSymbol.word == "\\"){//'/(...)\(...)' ; handle classes with constructor functions
+										collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,isTypeSyntax,isParameter);
+										exp.args[2] = exps.splice(i+1,1)[0];
+									}
 									//note: do not `break;` here, the call to `collectIntoTree()` does not cover all `exps` ; consider removing this comment if 'collectIntoTree' was removed from this for loop
 								}
 							}
@@ -1243,15 +1262,7 @@ const fs = Deno;//require("fs");
 											}
 											if((argExp.operatorData?.proceedence?.[1-j] ?? Expression.defaultProceedence) + (!selfExp.operatorData.isInverseBracketing && j) <= argProceendence){
 												addArg();
-												if(
-													selfExp.wordSymbol.subtype == SyntaxTree.subtype.dot
-													&& argExp.wordSymbol.type == SyntaxTree.type.label
-													&& argExp.wordSymbol.subtype == SyntaxTree.subtype.operator
-													&& !(exps[i+1].afix & Expression.AfixType.operatorWithLeftArg)
-												){//'a.=b` == `a.=,b`
-													selfExp.args[2] = exps.splice(i+1,1)[0];
-													//argExp = exps[i+argIndex];
-												}
+												if(j == 1)handleDotOperatorRightSideArgument(exps,i);
 												return;
 											}
 											if(!isOptionalArgument(selfExp,j))missingOperatorError(selfExp,argExp,j);
