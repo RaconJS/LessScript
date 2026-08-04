@@ -1113,17 +1113,6 @@ const fs = Deno;//require("fs");
 								}
 								return false;
 							}
-							function handleDotOperatorRightSideArgument(exps,i){
-								if(
-									exps[i].wordSymbol.subtype == SyntaxTree.subtype.dot
-									&& exps[i+1]?.wordSymbol?.type == SyntaxTree.type.label
-									&& exps[i+1].wordSymbol.subtype == SyntaxTree.subtype.operator
-									&& !(exps[i+1].afix & Expression.AfixType.operatorWithLeftArg)
-								){//'a.=b` == `a.=,b`
-									exps[i].args[2] = exps.splice(i+1,1)[0];
-									//argExp = exps[i+argIndex];
-								}
-							}
 							for(let i = startIndex; i < exps.length; i++){
 								let exp = exps[i];
 								if(isExpExcluded(i,true))break;
@@ -1204,7 +1193,6 @@ const fs = Deno;//require("fs");
 									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
 									const argExp = tryGetNewAddableArg();
 									exp.args[1] = argExp;
-									handleDotOperatorRightSideArgument(exps,i);
 									//note: do not `break;` here, the call to `collectIntoTree()` does not cover all `exps` ; consider removing this comment if 'collectIntoTree' was removed from this for loop
 								}
 							}
@@ -1255,7 +1243,15 @@ const fs = Deno;//require("fs");
 											}
 											if((argExp.operatorData?.proceedence?.[1-j] ?? Expression.defaultProceedence) + (!selfExp.operatorData.isInverseBracketing && j) <= argProceendence){
 												addArg();
-												if(j == 1)handleDotOperatorRightSideArgument(exps,i);
+												if(
+													selfExp.wordSymbol.subtype == SyntaxTree.subtype.dot
+													&& argExp.wordSymbol.type == SyntaxTree.type.label
+													&& argExp.wordSymbol.subtype == SyntaxTree.subtype.operator
+													&& !(exps[i+1].afix & Expression.AfixType.operatorWithLeftArg)
+												){//'a.=b` == `a.=,b`
+													selfExp.args[2] = exps.splice(i+1,1)[0];
+													//argExp = exps[i+argIndex];
+												}
 												return;
 											}
 											if(!isOptionalArgument(selfExp,j))missingOperatorError(selfExp,argExp,j);
