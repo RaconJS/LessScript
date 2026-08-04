@@ -29,19 +29,19 @@
 			print_i:\print(i);
 			i:;
 		);
-		get_reference_to_i, = 10
+		get_reference_to_i, = 10;
 		print_i,//10
 	foo:{a:\a&};//can use postfix form aswell for referencing
 	foo, = 2;
 	assert foo, == 2;
 //idea: type annotations :
--	//a::T ; {::T; exps };
+	//a::T ; {::T; exps };
 	//a:T=v ???
 
 	//also allows calling type methods on objects without
 	//'a:T:value'
 //idea: `a1.=a2<:a3<:foo` map function map(array1,array2,...,mapping_function:Fn(Item<array1>,Item<array2>,...)-> )
-	print< |[1;2;3].=["A";"B";"C"]<:\##+##;//["1A";"2B";"3C"]
+	print<|[1;2;3].=["A";"B";"C"]<:\##+##;//["1A";"2B";"3C"]
 //idea: `array1.>array2<:array3<:start_value<:{reduce_function:\s:v1:v2:v3:s+v1+v2+v3};`
 	//if reduce function has more than 2 args then the first args become arrays
 //idea: '#/' '#\'
@@ -65,7 +65,7 @@
 			assert this.a& === #.a&;
 			print(#.a + other.a);
 		};
-	)
+	);
 //idea: if tuple contains one item it can be treated at it's item
 	assert 3>2>1;
 	assert (1) == 1 != [1];
@@ -81,9 +81,9 @@
 		)
 	};
 //idea: ref patterns
-	ref => exp
-	ref exp
-	ref name => exp//name:key
+	ref => exp;
+	ref exp;
+	ref name => exp;//name:key
 //idea: inheritance/traits
 	A:/;
 	B:/;
@@ -96,10 +96,10 @@
 	AB:/(./.$A;./.$B);
 	AB:/A+B+();
 //idea:
-	rng//random function; "random number generator" ; generates a number in range 0 <= x < 1
-	assert 2.rng, == rng, * 2
+	rng;//random function; "random number generator" ; generates a number in range 0 <= x < 1
+	assert 2.rng, == rng, * 2;
 //idea: number.= for return last value
-	assert {3.=\#i} == 2
+	assert {3.=\#i} == 2;
 	number.=\index#length:{
 		assert number == length,
 		assert index < length,
@@ -156,11 +156,12 @@ struct(
 //idea: '*:exp'
 	a:(a:2;b:3;c:[1;2];"abc";"123");
 	*:a;
-	assert (a;b) == (2;3)
+	assert (a;b) == (2;3);
 //idea: `short_exp.=short_exp` --> `short_exp.=,short_exp`
 //idea: clone with depth function
 	clone:\object::(...):depth::Int:
 		object.=\item:...
+	;
 {//using RS for Rust and JS for Javascript ; JS: {
 	Input:*;//RS: let Input = Input;//Input refers to the last definision of Input ; in this case from a higher namespace
 	player: (//JS: let player = {

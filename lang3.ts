@@ -2,7 +2,8 @@
 	//1263 build type class for the language's type system
 //name suggetion: quad, (the Quick Unreadable And Dirty programming language)
 //TODO: add code to support '::=' making '::' have the same syntax as ':'
-const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[\@\$\#]\*|(?:\?&|&\?|\?\|)|\.\.=?|\.\.\.|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|!!!|=>|->|[><!=]=?|[+\-*%&|^~]{1,2}|#[#@?]|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:0[box][_0-9A-Fa-f]+|[0-9_](?:\.(?:(?!\.)|(?:[0-9_]+)))?)\b|\.|\b\w+\b|\S/g;
+const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[@$#]\*|(?:\?&|&\?|\?\|)|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|!!!|=>|->|[!=]==|[><!=]=?|>{1,3}|<{1,2}|([+\-*%&|^~])\2?|#(?:\.\.|[#@?\./\\])|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:0[box][_0-9A-Fa-f]+|[1-9][_\d]*)\b|\.\.\.|\.\.=?|\.|\b\w+\b|\S/g;
+	//note: float numbers are handed during syntax parting to allow for '3.<' aswell as '3.2'
 {//old code OBSILETE
 	function loga(...args){console.log(...args);}
 	let code = getFile("testCode.lang3");
@@ -46,11 +47,12 @@ function swapBrackets(){
 	 * )
 	 * */
 	const debugMode = true;
-	function assert(condision,msg = "",errorFunc = e=>Error(e)){
+	function assert(condision,msg = "",errorFunc = e=>Error(e)):true|Error{
 		if(debugMode){
 			msg ??= "";//msg:String|()->String
 			if(!condision)throw errorFunc("ASSERTION FAILLED:" + (typeof msg == "function"?msg():msg));
 		}
+		return true
 	}
 	function assume(condision,msg = "",errorFunc = e=>Error(e)):()=>any{
 		if(debugMode){
@@ -308,6 +310,7 @@ const fs = Deno;//require("fs");
 				// label
 					"operator",//operators e.g. '>' '=' in '.>' '.=' ; allows for 'a.>foo' --> 'b.>,foo'
 				// operator
+					"dot",// '.' '#.'
 					"comparitor",
 					"pipeline",// '|>' '<|' ':>' '<:'
 					"interval",// 'a..b' , 'a..=b'
@@ -370,7 +373,7 @@ const fs = Deno;//require("fs");
 									word.match(/^(?:NaN|Infinity)$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.number,afix:SyntaxTree.AfixType.nofix} :
 									word.match(/^(?:true|false)$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.bool,afix:SyntaxTree.AfixType.nofix} :
 									word.match(/^(?:null)$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.object,afix:SyntaxTree.AfixType.nofix} :
-									word.match(/^([!<>]=?|==)$/) ? {type:SyntaxTree.type.operator} :
+									word.match(/^([!<>]=?|[!=]?==)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:=>|->)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/=$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.assignment} ://e.g. '=' '+='
 									word.match(/^:$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.declaration} :
@@ -378,10 +381,9 @@ const fs = Deno;//require("fs");
 									word.match(/^(?:[|:]>)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.pipeline,isReversed:false} ://'|>' or ':>'
 									word.match(/^(?:<[|:])$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.pipeline,isReversed:true} ://'<|' or '<:'
 									word.match(/^,$/) ? {type:SyntaxTree.type.operator} ://','
-									word.match(/^[!%^&*\/\-+~|<>¬?]|\?[&|]|[&]\?/) ? {type:SyntaxTree.type.operator}  ://ternary operators
-									word.match(/^[!%^&*\/\-+~|<>¬?]|\?[&|]|[&]\?/) ? {type:SyntaxTree.type.operator}  ://ternary operators
+									word.match(/^(?:([+\-*%&|^~])\1?|>{1,3}|<{1,2}|[!\/<>¬?]|\?[&|]|[&]\?)$/) ? {type:SyntaxTree.type.operator}  ://ternary operators
 									word.match(/^£$/) ? {type:SyntaxTree.type.operator}://void operator
-									word.match(/^\.$/) ? {type:SyntaxTree.type.operator} ://dot operator 
+									word.match(/^(?:\.|#\.)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.dot} ://dot operator 
 									word.match(/^\.\.=?$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.interval} ://interval '1..3'
 									word.match(/^(?:ref)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^@$/) ? {type:SyntaxTree.type.operator} :
@@ -393,7 +395,7 @@ const fs = Deno;//require("fs");
 									word.match(/^(?:mod)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^in$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:else|do)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^#[#@!?]?$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.nofix} ://'#' or '##' or '#@' in: '#name' '##'
+									word.match(/^#(?:\.\.|[#@!?/\\])?$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.nofix} ://'#' or '##' or '#@' in: '#name' '##'
 									word.match(/^\$$/) ? {type:SyntaxTree.type.operator} ://'$type' '$key'
 									word.match(/^[$@*]\*$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.prefix}://'@*' in '@* = (a=1,b=2,c=3)'
 									word.match(/^\.\.\.$/) ? {type:SyntaxTree.type.operator} :
@@ -611,19 +613,28 @@ const fs = Deno;//require("fs");
 						"!!!"     :{afix:OperatorData.AfixType.nofix},
 						"$$"      :{afix:OperatorData.AfixType.nofix},
 						"$"       :{afix:OperatorData.AfixType.nofix},
+						"#"       :{afix:OperatorData.AfixType.nofix},
 						"##"      :{afix:OperatorData.AfixType.nofix},
 						"#@"      :{afix:OperatorData.AfixType.nofix},
 						"#?"      :{afix:OperatorData.AfixType.nofix},
 						"#!"      :{afix:OperatorData.AfixType.nofix},
+						"#."      :{afix:OperatorData.AfixType.nofix},
+						"#/"      :{afix:OperatorData.AfixType.nofix},
+						"#\\"     :{afix:OperatorData.AfixType.nofix},
+						"#.."     :{afix:OperatorData.AfixType.nofix},
 						":"       :{afix:OperatorData.AfixType.nofix},
 						"::"      :{afix:OperatorData.AfixType.nofix},
 					},
-					{
-						"#"       :{afix:OperatorData.AfixType.prefix},
+					{//consumes a key_exp
 						"$"       :{afix:OperatorData.AfixType.prefix},
+						"#"       :{afix:OperatorData.AfixType.prefix},
 						"#@"      :{afix:OperatorData.AfixType.prefix},
 						"#?"      :{afix:OperatorData.AfixType.prefix},
 						"#!"      :{afix:OperatorData.AfixType.prefix},
+						"#."      :{afix:OperatorData.AfixType.prefix},
+						"#/"      :{afix:OperatorData.AfixType.prefix},
+						"#\\"     :{afix:OperatorData.AfixType.prefix},
+						"#.."     :{afix:OperatorData.AfixType.prefix},
 					},
 					{
 						"."       :{afix:OperatorData.AfixType.infix,optionalArg:[1,0]},
@@ -641,16 +652,19 @@ const fs = Deno;//require("fs");
 						":>"      :{afix:OperatorData.AfixType.infix},
 						"<:"      :{afix:OperatorData.AfixType.infix},
 						"|>"      :{afix:OperatorData.AfixType.infix},
-						"<|"      :{afix:OperatorData.AfixType.infix,isInverseBracketing:true},
+						"<|"      :{afix:OperatorData.AfixType.infix,isInverseBracketing:true},//'a<|(b<|c)`
 					},
 					{
-						":"       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,optionalArg:[0,1]},
-						":\x00"   :{afix:OperatorData.AfixType.postfix,parameter:OperatorData.left,optionalArg:[0,1]},
+						":"       :[//using an array `[{...}, {...}]` here is the same as `":" : ...` + `":\x00" : ...`
+							{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,optionalArg:[0,1]},
+							{afix:OperatorData.AfixType.postfix,optionalArg:[0,1]},//'a:;' for declaration ; same as 'a:();'
+						],
 						"::"      :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,optionalArg:[0,1]},
 						"::\x00"  :{afix:OperatorData.AfixType.postfix,parameter:OperatorData.left,optionalArg:[0,1]},
+						"£"       :{afix:OperatorData.AfixType.infix,optionalArg:[1,0]},//isInverseBracketing is false for: 'a £b £c' --> '(a £b) £c' <--> 'a £{b;c}'
 					},
 					{
-						"="       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,isInverseBracketing:true},
+						"="       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,isInverseBracketing:true},//isInverseBracketing does: 'a=b=c' --> 'a=(b=c)'
 						"=\x00"   :{afix:OperatorData.AfixType.postfix,parameter:OperatorData.left,isInverseBracketing:true},
 					},
 					{
@@ -666,11 +680,21 @@ const fs = Deno;//require("fs");
 						"--"      :{afix:OperatorData.AfixType.prefix},
 					},
 					{
+						"!"       :{afix:OperatorData.AfixType.postfix},
+						"+"       :{afix:OperatorData.AfixType.postfix},//:to number
+						"-"       :{afix:OperatorData.AfixType.postfix},//:to negative number
+						"~"       :{afix:OperatorData.AfixType.postfix},//:not
+						"*"       :{afix:OperatorData.AfixType.postfix},//:array type 
+						"^"       :{afix:OperatorData.AfixType.postfix},//:enum type
+						"|"       :{afix:OperatorData.AfixType.postfix},//:boolean set type
+						"&"       :{afix:OperatorData.AfixType.postfix},//:reference type ; this type is not implemented since this is a high-level langauge
+
+
 						"++"      :{afix:OperatorData.AfixType.postfix},
 						"--"      :{afix:OperatorData.AfixType.postfix},
 					},
 					{
-						".."      :{afix:OperatorData.AfixType.infix},
+						".."      :[{afix:OperatorData.AfixType.infix},{afix:OperatorData.AfixType.prefix}],
 						"..="     :{afix:OperatorData.AfixType.infix},
 					},
 					{
@@ -687,8 +711,8 @@ const fs = Deno;//require("fs");
 						"%%"      :{afix:OperatorData.AfixType.infix},
 					},
 					{
-						"*"       :{afix:OperatorData.AfixType.infix},
-						"/"       :{afix:OperatorData.AfixType.infix},
+						"*"       :{afix:OperatorData.AfixType.infix,optionalArg:[1,1]},
+						"/"       :{afix:OperatorData.AfixType.infix,optionalArg:[1,1]},
 					},
 					{
 						"+"       :{afix:OperatorData.AfixType.infix},
@@ -713,6 +737,8 @@ const fs = Deno;//require("fs");
 					{
 						"=="      :{afix:OperatorData.AfixType.infix},
 						"!="      :{afix:OperatorData.AfixType.infix},
+						"==="     :{afix:OperatorData.AfixType.infix},
+						"!=="     :{afix:OperatorData.AfixType.infix},
 						">="      :{afix:OperatorData.AfixType.infix},
 						"<="      :{afix:OperatorData.AfixType.infix},
 						">"       :{afix:OperatorData.AfixType.infix},
@@ -741,10 +767,13 @@ const fs = Deno;//require("fs");
 						"::\x00"  :{afix:OperatorData.AfixType.prefix},//variable declarator and type operator
 					},
 					{
+						"=>"      :{afix:OperatorData.AfixType.infix,optionalArg:[1,0]},
+					},
+					{
 						"="       :{afix:OperatorData.AfixType.infix,isInverseBracketing:true},//'a=(b=c)' instead of '(a=b)=c'
 						"=\x00"   :{afix:OperatorData.AfixType.prefix,isInverseBracketing:true},//'a=(b=c)' instead of '(a=b)=c'
 						"\\"      :{afix:OperatorData.AfixType.prefix,optionalArg:[0,1]},//function
-						"/"       :{afix:OperatorData.AfixType.prefix},//class
+						"/"       :{afix:OperatorData.AfixType.prefix,optionalArg:[0,1]},//class
 						"`"       :{afix:OperatorData.AfixType.prefix},
 						"if"      :{afix:OperatorData.AfixType.prefix,includes:["=>"]},
 						"else"    :{afix:OperatorData.AfixType.infix},//'if' else, 'if', 'while', 'match', 'for'
@@ -761,15 +790,11 @@ const fs = Deno;//require("fs");
 						"async"   :{afix:OperatorData.AfixType.prefix},
 						"await"   :{afix:OperatorData.AfixType.prefix},
 						"$$"      :{afix:OperatorData.AfixType.prefix},//'\$${a=2;b=3}' '$$:=2' ; unique symbol
-						"=>"      :{afix:OperatorData.AfixType.infix},
 						"@"       :{afix:OperatorData.AfixType.prefix},
 						"!<"      :{afix:OperatorData.AfixType.prefix},
 						"!>"      :{afix:OperatorData.AfixType.prefix},
 						"mod"     :{afix:OperatorData.AfixType.prefix},
-						"ref"     :[
-							{afix:OperatorData.AfixType.prefix},
-							{afix:OperatorData.AfixType.infix}
-						],
+						"ref"     :{afix:OperatorData.AfixType.prefix},
 					},
 					{
 						"¬":{afix:OperatorData.AfixType.infix,parameter:OperatorData.left},
@@ -925,10 +950,14 @@ const fs = Deno;//require("fs");
 							[[SyntaxTree.type.operator],()=>{
 								let possibleAfixes:{[_]:OperatorData} = operatorProceedence[word.word];
 								assert(!!possibleAfixes,`unhandled case for operator '${word.word}' in \`operatorProceedence\``);
-								if(words[i-1]?.word == "."){//for 'array.=(mapFunction)' ; converts into label
-									word.type = SyntaxTree.type.label;
-									word.subtype = SyntaxTree.subtype.operator;
-									return new Expression.Label(word);
+								if(
+									word.subtype == SyntaxTree.subtype.dot
+									&& words[i+1]?.type == SyntaxTree.type.operator && words[i+1]?.word != "$"
+									&& !(word.word == "#." && words[i+1].isAfterWhiteSpace)//'#.<' --> '{#.}."<"' ; `#. <` --> '{#.} <'
+								){//for patterns like 'array.=(mapFunction)' ; converts into label ; 'a.$name' is an exception
+									let propertyWord:WordSymbol = words[i+1];
+									propertyWord.type = SyntaxTree.type.label;
+									propertyWord.subtype = SyntaxTree.subtype.operator;
 								}
 								let num = !!possibleAfixes.prefix + !!possibleAfixes.infix + !!possibleAfixes.postfix + !!possibleAfixes.nofix;//number of afixs
 								let exp = new Expression.Operator(word,{});
@@ -950,9 +979,6 @@ const fs = Deno;//require("fs");
 									//note: ':' and '=' does not need a right argument; 
 								}
 								else get_afix:{
-									assert(!(possibleAfixes.infix && possibleAfixes.prefix && possibleAfixes.postfix),"assumed 2 types of operator cases: 1: '++a' / 'a++' ; 2: '+a' / 'a+b'",e=>Error(e));
-									if(possibleAfixes.postfix)assert(!possibleAfixes.infix || num == 2);
-									if(possibleAfixes.infix)assert(!possibleAfixes.postfix || num == 2);
 									if(num == 1){
 										operatorData = possibleAfixes.infix ?? possibleAfixes.prefix ?? possibleAfixes.postfix ?? possibleAfixes.nofix;
 										assert(!!operatorData);
@@ -965,49 +991,62 @@ const fs = Deno;//require("fs");
 										words[i-1]?.type == SyntaxTree.type.operator &&
 										(words[i-1].afix & SyntaxTree.AfixType.operatorWithRightArg)
 									)possibleAfix &= ~SyntaxTree.AfixType.operatorWithLeftArg;
-									{//checks for right argument ; '+b' / 'a+b'
-										if(!hasArg(words[i+1]))possibleAfix &= ~SyntaxTree.AfixType.operatorWithRightArg;
-										else if(
-											words[i+1]?.type == SyntaxTree.type.operator &&
-											(
-												operatorProceedence[words[i+1]].infix &&
-												!operatorProceedence[words[i+1]].prefix//assert: words[i+1] must have left arg so we cannot
-												//ignores the nofix case here, nofix is userally for `(*)`
-											)
-										){
-											assert(!(operatorProceedence[words[i+1]].prefix && operatorProceedence[words[i+1]].postfix),"expected: no operator has these all 3 afix types at once");
-											possibleAfix &= ~SyntaxTree.AfixType.operatorWithRightArg;//note: preceedence doesn't matter for removing right arg here since a syntax error would be thrown if it's wrong either way
-										}
+									if(//checks for right argument ; '+b' / 'a+b'
+										!hasArg(words[i+1]) ||
+										words[i+1]?.type == SyntaxTree.type.operator &&
+										(//if cannot be tu
+											operatorProceedence[words[i+1]].infix &&
+											!operatorProceedence[words[i+1]].prefix//assert: words[i+1] must have left arg so we cannot
+											//ignores the nofix case here, nofix is userally for `(*)`
+										)
+									){
+										if(0)assert(!(operatorProceedence[words[i+1]].prefix && operatorProceedence[words[i+1]].postfix),"expected: no operator has these all 3 afix types at once");
+										possibleAfix &= ~SyntaxTree.AfixType.operatorWithRightArg;//note: preceedence doesn't matter for removing right arg here since a syntax error would be thrown if it's wrong either way
 									}
 									operatorData = afixIntoOperatorData(possibleAfixes,possibleAfix);//:OperatorData?
-									if(!operatorData){//special cases
-										if(null){}
-										else if(possibleAfix != OperatorData.AfixType.operatorWithBothArgs && possibleAfixes.nofix){
-											operatorData = possibleAfixes.nofix;
+									{//special cases ; afix is not obvious works out which one to choose
+										if(!operatorData){//assign afix based on afix priority
+											operatorData = 
+												possibleAfix == OperatorData.AfixType.operatorWithBothArgs?
+													//e.g. 'i++' in 'i++ name' ; postfix takes priority over prefix
+													possibleAfixes.postfix??possibleAfixes.prefix??possibleAfixes.nofix
+												:possibleAfixes.prefix || possibleAfixes.postfix?undefined
+												:possibleAfix == possibleAfixes.nofix? undefined
+												:(
+													assert([OperatorData.AfixType.operatorWithLeftArg,OperatorData.AfixType.operatorWithRightArg,OperatorData.AfixType.nofix].includes(possibleAfix),possibleAfix),
+													undefined
+												)
+													
+											;
 										}
-										else if(possibleAfix == OperatorData.AfixType.operatorWithBothArgs && possibleAfixes.postfix){//e.g. 'i++' in 'i++ name' ; postfix takes priority over prefix
-											operatorData = possibleAfixes.postfix;
+										if(!operatorData){//handle optional arguments
+											//assume: only one operator from has optional arguments
+											operatorData =
+												(
+													(possibleAfixes.infix?.optionalArg?.[0] || !!(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)) &&
+													(possibleAfixes.infix?.optionalArg?.[1] || !!(possibleAfix&OperatorData.AfixType.operatorWithRightArg))
+												)?possibleAfixes.infix
+												:(
+													possibleAfixes.postfix?.optionalArg?.[1] || !!(possibleAfix&OperatorData.AfixType.operatorWithLefArg)
+												)?possibleAfixes.postfix
+												:(
+													possibleAfixes.prefix?.optionalArg?.[1] || !!(possibleAfix&OperatorData.AfixType.operatorWithRightArg)
+												)?possibleAfixes.prefix
+												:possibleAfixes.nofix
 										}
-										else if(
-											words[i+1]?.type == SyntaxTree.type.operator &&
-											(operatorProceedence[words[i+1]].prefix)//allows for '!+a' chained prefix operators
-										){
-											operatorData = possibleAfixes.prefix;
-										}
-										else assert.impossibleCase(`unhanded case '${word}' in '${words.join(" ")}'`,e=>Error(e))
+										if(!operatorData)
+											word.throwError("syntax", `cannot use operator in that pattern got pattern: \`${
+													!!(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)?words[i-1]:""//"A":""
+												} ${word} ${
+													!!(possibleAfix&OperatorData.AfixType.operatorWithRightArg)?words[i+1]:""//"B":""
+												}\`. Expected \`${
+													!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithLeftArg)?"A":""
+												} ${word} ${
+													!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithRightArg)?"B":""
+												}\`.
+											`,e=>Error(e))
+										;
 									}
-									if(!operatorData)
-										word.throwError("syntax", `cannot use operator in that pattern got pattern: \`${
-												!!(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)?words[i-1]:""//"A":""
-											} ${word} ${
-												!!(possibleAfix&OperatorData.AfixType.operatorWithRightArg)?words[i+1]:""//"B":""
-											}\`. Expected \`${
-												!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithLeftArg)?"A":""
-											} ${word} ${
-												!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithRightArg)?"B":""
-											}\`.
-										`,e=>Error(e))
-									;
 								}
 								exp.operatorData = operatorData;
 								exp.afix = operatorData.afix;
@@ -1046,14 +1085,15 @@ const fs = Deno;//require("fs");
 							//handle dot operator
 						}
 						function collectIntoTree(startIndex = 0,localMaxProceedence,exps,isTypeSyntax = false,isParameter = false):mutates<exps>{
-							function isExpExcluded(exp){
+							function isExpExcluded(i,alwaysAllowParameter = false){
+								let exp = exps[i];
 								if(!exp)return true;
 								const excludeAssignmentOperator = isTypeSyntax;
 								const excludeDeclarationOperator = isParameter;
 								const excludeParameterSeparator = isParameter;//'\a#b#c' '#' is parameter separator
-								return excludeParameterSeparator && exp.wordSymbol == "#"
-									|| excludeAssignmentOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.assignment
-									|| excludeDeclarationOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.declaration
+								return !alwaysAllowParameter && (excludeParameterSeparator && exp.wordSymbol == "#" && !(exps[i-1].wordSymbol.word == "\\" || (exps[i-1].afix&Expression.AfixType.operatorWithRightArg)&&!exps.args?.[1]))
+									|| (excludeAssignmentOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.assignment)
+									|| (excludeDeclarationOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.declaration)
 							}
 							function isOptionalArgument(exp,j){
 								return exp?.operatorData?.optionalArg?.[j] || exp?.wordSymbol?.subtype == SyntaxTree.subtype.declaration;
@@ -1073,10 +1113,22 @@ const fs = Deno;//require("fs");
 								}
 								return false;
 							}
+							function handleDotOperatorRightSideArgument(exps,i){
+								if(
+									exps[i].wordSymbol.subtype == SyntaxTree.subtype.dot
+									&& exps[i+1]?.wordSymbol?.type == SyntaxTree.type.label
+									&& exps[i+1].wordSymbol.subtype == SyntaxTree.subtype.operator
+									&& !(exps[i+1].afix & Expression.AfixType.operatorWithLeftArg)
+								){//'a.=b` == `a.=,b`
+									exps[i].args[2] = exps.splice(i+1,1)[0];
+									//argExp = exps[i+argIndex];
+								}
+							}
 							for(let i = startIndex; i < exps.length; i++){
 								let exp = exps[i];
-								if(isExpExcluded(exp))break;
+								if(isExpExcluded(i,true))break;
 								if(handleBracketAfix(exps,i))continue;
+								if(exp.wordSymbol.type != SyntaxTree.type.operator)continue;
 								if(exp.afix != Expression.AfixType.prefix)continue;
 								if(exp.args[1])continue;
 								function tryGetNewAddableArg():Result<Expression,Throw>{//may return an argument that can be pushed to the parent expression's exp.args
@@ -1100,7 +1152,14 @@ const fs = Deno;//require("fs");
 											collectIntoTree(i1,parameterProceedence,exps,false,true);//collects all parameters into `#names`s
 										}
 										assert(!!exps[i1]);{
-											args.push(exps.splice(i1,1)[0]);
+											const arg = exps.splice(i1,1)[0];
+											if(!hasParamEnder && arg?.wordSymbol?.word == ":"){
+												const functionBody = arg;
+												hasParamEnder = true;
+												exp.paramEnder = functionBody;
+												break;
+											}
+											args.push(arg);
 										}
 										if(!exps[i1])break;
 										if(exps[i1].wordSymbol.word == ":"){
@@ -1116,10 +1175,16 @@ const fs = Deno;//require("fs");
 									}
 									if(hasParamEnder){
 										exp.paramEnder.args = args;
-										exp.args = [exp.paramEnder,undefined];
+										collectIntoTree(i1,exp.operatorData.proceedence[1],exps);
+										exp.args = [exp.paramEnder,exps.splice(i1,1)[0]??undefined];
+										continue;
 									}
 									else{
-										if(args.length>1)exp.wordSymbol.throwError("syntax","function missing ':' after argument list. Alternatively missing operator between '#'s. found pattern '\\a#b#c:'.",a=>Error(a));
+										if(args.length>1){
+											exp.args = args;
+											if(0)console.error(printTree(exps));
+											exp.wordSymbol.throwError("syntax", "function missing ':' after argument list. Alternatively missing operator between '#'s. found pattern '\\a#b#c:'.",a=>Error(a));
+										}
 										assert(args.length <= 1);
 										if(args.length == 1){
 											exp.args[1] = args[0];//'\exp'
@@ -1131,10 +1196,15 @@ const fs = Deno;//require("fs");
 									}
 									collectIntoTree(i1,exp.operatorData.proceedence[1],exps,false,isParameter);
 								}
+								else if(exp.wordSymbol.word == "£"){
+									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,false,false);
+									exp.args.push(exps.splice(i+1,1));
+								}
 								else{
 									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
 									const argExp = tryGetNewAddableArg();
 									exp.args[1] = argExp;
+									handleDotOperatorRightSideArgument(exps,i);
 									//note: do not `break;` here, the call to `collectIntoTree()` does not cover all `exps` ; consider removing this comment if 'collectIntoTree' was removed from this for loop
 								}
 							}
@@ -1174,7 +1244,10 @@ const fs = Deno;//require("fs");
 												if(j == 0)i--;
 											};
 											{//handle special cases
-												if(selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration){//does both arguments of ':' before the '=' to allow 'a:T=b' --> '(a:T)=b' and prevent 'a:(T=b)'
+												if(
+													selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration
+													|| j == 1 && selfExp.afix == Expression.AfixType.prefix//allow for '1+if a => 0'
+												){//does both arguments of ':' before the '=' to allow 'a:T=b' --> '(a:T)=b' and prevent 'a:(T=b)'
 													collectIntoTree(i+1,selfExp.operatorData.proceedence[1],exps,false,isParameter);//:mutates owner object of item argExp
 													argExp = exps[i + argIndex];//update
 												}
@@ -1182,6 +1255,7 @@ const fs = Deno;//require("fs");
 											}
 											if((argExp.operatorData?.proceedence?.[1-j] ?? Expression.defaultProceedence) + (!selfExp.operatorData.isInverseBracketing && j) <= argProceendence){
 												addArg();
+												if(j == 1)handleDotOperatorRightSideArgument(exps,i);
 												return;
 											}
 											if(!isOptionalArgument(selfExp,j))missingOperatorError(selfExp,argExp,j);
@@ -1198,7 +1272,7 @@ const fs = Deno;//require("fs");
 								}
 								let maxIndex;
 								for(let i = startIndex; i < exps.length; i++){
-									if(isExpExcluded(exps[i]))break;
+									if(isExpExcluded(i))break;
 									maxIndex = i;
 									if(!exps[i].operatorData)continue;
 									if(exps[i].operatorData.isInverseBracketing)continue;
@@ -1217,7 +1291,7 @@ const fs = Deno;//require("fs");
 					}
 				}
 				if(exps.length > 1){
-					if(0)console.error(printTree(exps));
+					if(1)console.error(printTree(exps));
 					let adjacentSides:Expression[2] = [exps[0],exps[1]].map((v,i)=>{
 						let otherSide = 1 - i;
 						let tryNext = forBailOld(v.wordSymbol.errorData.file.words.length);
@@ -1228,7 +1302,7 @@ const fs = Deno;//require("fs");
 						}
 						return v;
 					});
-					adjacentSides[1].wordSymbol.throwError("syntax", `double expression. missing expression sepparator or operator. Expected previous '.', ';', or an operator. Found '${exps[1].wordSymbol.word}'`, e=>Error(e));//TODO: make this error identify the 2 adjacent wordSymbols
+					adjacentSides[1].wordSymbol.throwError("syntax", `double expression. missing expression sepparator or operator. Expected previous '.', ';', or an operator. Found '${adjacentSides[0]}' and '${exps[1].wordSymbol.word}'`, e=>Error(e));//TODO: make this error identify the 2 adjacent wordSymbols
 				}
 				return {index:i,expression:exps[0]};
 			},

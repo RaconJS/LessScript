@@ -649,3 +649,7 @@
 				//special patterns:
 					//declaration pattern used for adding properties to struct
 		//exp
+	//misc:
+		//`#.operator_symbol` cannot have a space between the `#.` and the `operator_symbol`
+		\#.< \# + 1;//`a.<,foo `
+		\#. < 5;//`a < b`
