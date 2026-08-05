@@ -1,6 +1,6 @@
 //TODO: work on 1634 `function getDeclarationFromAutoparameter` ; implementing '##' '#@' '#?' get parameters for '\', 'if', 'else' etc..
 	//1263 build type class for the language's type system
-//name suggetion: quad, (the Quick Unreadable And Dirty programming language)
+//name suggetions: quad`.qd` (the Quick Unreadable And Dirty programming language), `.cr` Crunch
 //TODO: add code to support '::=' making '::' have the same syntax as ':'
 const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[@$#]\*|(?:\?&|&\?|\?\||\?!)|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|!!!|=>|->|[!=]==|[><!=]=?|>{1,3}|<{1,2}|([+\-*%&|^~])\2?|#(?:\.\.|[#@?\./\\])|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:0[box][_0-9A-Fa-f]+|[1-9][_\d]*)\b|\.\.\.|\.\.=?|\.|\b\w+\b|\S/g;
 	//note: float numbers are handed during syntax parting to allow for '3.<' aswell as '3.2'
@@ -319,6 +319,7 @@ const fs = Deno;//require("fs");
 					"assignment",// '='
 					"typeAnnotation",
 					"return",// '?' '?!'
+					"statement",// 'if' 'while' etc... ; statements with 'statement exp => exp'
 			);
 			static subtype2 = EnumSymbols(
 				"regex",// 'r"..."'
@@ -399,7 +400,8 @@ const fs = Deno;//require("fs");
 									word.match(/^\$$/) ? {type:SyntaxTree.type.operator} ://'$type' '$key'
 									word.match(/^[$@*]\*$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.prefix}://'@*' in '@* = (a=1,b=2,c=3)'
 									word.match(/^\.\.\.$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:if|while|for|match|break|continue|return|catch|assert|as|is)$/) ? {type:SyntaxTree.type.operator} :
+									word.match(/^(?:if|while|for|match)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement} :
+									word.match(/^(?:break|continue|return|catch|assert|as|is)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:mod)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^in$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:else|do)$/) ? {type:SyntaxTree.type.operator} :
@@ -541,7 +543,7 @@ const fs = Deno;//require("fs");
 			lines;//:string[]
 		};
 	//----
-	const parseIntoOperatorSyntaxTree = (()=>{
+	const parseIntoOperatorSyntaxTree:Function = (()=>{
 		//proceedence:
 			class OperatorData{
 				constructor(data={}){Object.assign(this,data)}
@@ -645,10 +647,14 @@ const fs = Deno;//require("fs");
 						"?."      :{afix:OperatorData.AfixType.infix,optionalArg:[1,0]},//same as in javascript's `option?.property`
 					},
 					{
+					},
+					{
 						"("       :{afix:OperatorData.AfixType.postfix},
 						"["       :{afix:OperatorData.AfixType.postfix},
 						"{"       :{afix:OperatorData.AfixType.postfix},
 						"`"       :{afix:OperatorData.AfixType.postfix},//early return
+						"."       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left},
+						"?."      :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left},//same as in javascript's `option?.property`
 					},
 					{
 						","       :{afix:OperatorData.AfixType.infix,optionalArg:[0,1],isInverseBracketing:true},
@@ -878,6 +884,7 @@ const fs = Deno;//require("fs");
 				//super.wordSymbol?:WordSymbol;
 				args:Expression[1] = [undefined];
 				signitureExp?:Expression = null;
+				toTree():Tree<Expression>[]{return [this.args[0]||undefined,...this.contence]}
 				toString(){
 					return this.wordSymbol + " " + this.contence + " " + this.wordSymbol.endBracket;
 				}
@@ -937,13 +944,24 @@ const fs = Deno;//require("fs");
 					][afix];
 				}
 				{//generate syntaxTree ; contains lots of "special case" code
+					const hasArg = word => !!word && word.word != ";";//BODGED: TODO: assign preceedences & afixes in the next, expression tree building, phase.
+					function isCanHaveLeftArgument(i,isBracket=false):u2&AfixType{
+						return !(
+							!hasArg(words[i-1]) ||
+							isBracket && words[i-1]?.subtype == SyntaxTree.subtype.operator ||
+							words[i-1].type == SyntaxTree.type.operator
+							&& exps[exps.length-1].afix & SyntaxTree.AfixType.operatorWithRightArg
+						);
+					}
 					generate_exp_objects:for (; i < words.length && (word=words[i]) && word.word!=";";i++){
 						let exp = match(word.type,[//:mutate current_expression & valueStack
 							[[SyntaxTree.type.bracket],()=>
 								new Expression.Bracket(word,{
 									contence:contexts.expressions(0,word),
 									operatorData:operatorProceedence[word.word].postfix,//non-functioncall brackets (e.g.`;();` instead of `foo()`) are handled as a special case later on.
-									afix:OperatorData.AfixType.postfix,
+									afix:isCanHaveLeftArgument(i,true)?
+										SyntaxTree.AfixType.postfix:
+										SyntaxTree.AfixType.nofix,
 									knownAfix:false,
 								})
 							],
@@ -990,23 +1008,20 @@ const fs = Deno;//require("fs");
 										assert(!!operatorData);
 										break get_afix;
 									}
-									const hasArg = word => !!word && word.word != ";";//BODGED: TODO: assign preceedences & afixes in the next, expression tree building, phase.
 									let possibleAfix = 0b11;
-									if(//if no valid left argument
-										!hasArg(words[i-1]) ||
-										words[i-1]?.type == SyntaxTree.type.operator &&
-										(words[i-1].afix & SyntaxTree.AfixType.operatorWithRightArg)
-									)possibleAfix &= ~SyntaxTree.AfixType.operatorWithLeftArg;
+									if(!isCanHaveLeftArgument(i))possibleAfix &= ~SyntaxTree.AfixType.operatorWithLeftArg;
 									if(//checks for right argument ; '+b' / 'a+b'
 										!hasArg(words[i+1]) ||
 										words[i+1]?.type == SyntaxTree.type.operator &&
-										(//if cannot be tu
-											operatorProceedence[words[i+1]].infix &&
-											!operatorProceedence[words[i+1]].prefix//assert: words[i+1] must have left arg so we cannot
+										(//if words[i+1]'s left argument cannot be removed
+											!(operatorProceedence[words[i+1]].prefix||operatorProceedence[words[i+1]].nofix) &&
+											operatorProceedence[words[i+1]].infix//assert: words[i+1] must have left arg afix other than infix so we cannot
 											//ignores the nofix case here, nofix is userally for `(*)`
+
+											//operatorProceedence[words[i+1]].infix &&
+											//!operatorProceedence[words[i+1]].prefix
 										)
 									){
-										if(0)assert(!(operatorProceedence[words[i+1]].prefix && operatorProceedence[words[i+1]].postfix),"expected: no operator has these all 3 afix types at once");
 										possibleAfix &= ~SyntaxTree.AfixType.operatorWithRightArg;//note: preceedence doesn't matter for removing right arg here since a syntax error would be thrown if it's wrong either way
 									}
 									operatorData = afixIntoOperatorData(possibleAfixes,possibleAfix);//:OperatorData?
@@ -1067,29 +1082,6 @@ const fs = Deno;//require("fs");
 						}
 					}
 					collect_arguments_into_tree:{//handles precedence
-						function tryCollectParameterExp(startIndex = 0,exps):Option<Expression>&mutates<exps>{//'a', '[a,b,c]' ; returns Some<Expression> if succesfully found a key_exp
-							const i = startIndex;
-							if(!match(exps[i].wordSymbol.type,[
-								[[
-									SyntaxTree.type.whiteSpace,
-									SyntaxTree.type.comment,
-								],()=>{assert.impossibleCase("should not have white space at this stage (parsing into AST)")}],
-								[[
-									SyntaxTree.type.value,
-									SyntaxTree.type.label,
-								],()=>true],
-								()=>todo()
-								//"whiteSpace",
-								//"comment",
-								//"value",//bool|number|string|special
-								//"label",
-								//"bracket",// '(' ')'
-								//"operator",
-								//"sepparator",//';'
-								//"constant",
-							])){return null}
-							//handle dot operator
-						}
 						function collectIntoTree(startIndex = 0,localMaxProceedence,exps,isTypeSyntax = false,isParameter = false):mutates<exps>{
 							function isExpExcluded(i,alwaysAllowParameter = false){
 								let exp = exps[i];
@@ -1097,7 +1089,14 @@ const fs = Deno;//require("fs");
 								const excludeAssignmentOperator = isTypeSyntax;
 								const excludeDeclarationOperator = isParameter;
 								const excludeParameterSeparator = isParameter;//'\a#b#c' '#' is parameter separator
-								return !alwaysAllowParameter && (excludeParameterSeparator && exp.wordSymbol == "#" && !(exps[i-1].wordSymbol.word == "\\" || (exps[i-1].afix&Expression.AfixType.operatorWithRightArg)&&!exps.args?.[1]))
+								return !alwaysAllowParameter 
+									&& (excludeParameterSeparator && 
+										exp.wordSymbol == "#" &&
+										!(
+											exps[i-1].wordSymbol.word == "\\"
+											|| (exps[i-1].afix&Expression.AfixType.operatorWithRightArg)
+											&& !exps[i-1].args?.[1])
+									)
 									|| (excludeAssignmentOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.assignment)
 									|| (excludeDeclarationOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.declaration)
 							}
@@ -1124,7 +1123,7 @@ const fs = Deno;//require("fs");
 								let selfExp = exps[i];
 								let argExp = selfExp.args[1];
 								if(
-									selfExp.wordSymbol.subtype == SyntaxTree.subtype.dot
+									selfExp.wordSymbol.subtype == SyntaxTree.subtype.dot//'a.=b' '#.'
 									&& argExp.wordSymbol.type == SyntaxTree.type.label
 									&& argExp.wordSymbol.subtype == SyntaxTree.subtype.operator
 									&& !(exps[i+1].afix & Expression.AfixType.operatorWithLeftArg)
@@ -1306,15 +1305,16 @@ const fs = Deno;//require("fs");
 					if(1)console.error(printTree(exps));
 					let adjacentSides:Expression[2] = [exps[0],exps[1]].map((v,i)=>{
 						let otherSide = 1 - i;
-						let tryNext = forBailOld(v.wordSymbol.errorData.file.words.length);
-						//assume: v:Tree structure
-						while(v instanceof Expression.Operator && v.args[otherSide]){
-							tryNext();
-							v = v.args[otherSide];
+						let tryNext = forBailOld();
+						//assume: v:finite Tree structure
+						for(let _ of forBailGenerator(v.wordSymbol.errorData.file.words.length)){
+							let nextExp = v.args?.[otherSide];
+							if(!nextExp)break;
+							v = nextExp;
 						}
 						return v;
 					});
-					adjacentSides[1].wordSymbol.throwError("syntax", `double expression. missing expression sepparator or operator. Expected previous '.', ';', or an operator. Found '${adjacentSides[0]}' and '${exps[1].wordSymbol.word}'`, e=>Error(e));//TODO: make this error identify the 2 adjacent wordSymbols
+					adjacentSides[1].wordSymbol.throwError("syntax", `double expression. missing expression sepparator or operator. Expected previous '.', ';', or an operator. Found '${adjacentSides[0]}' and '${adjacentSides[1]}'`, e=>Error(e));//TODO: make this error identify the 2 adjacent wordSymbols
 				}
 				return {index:i,expression:exps[0]};
 			},
@@ -1332,6 +1332,65 @@ const fs = Deno;//require("fs");
 		});
 		return parseOperatorSyntaxTree;
 	})();
+
+	function parseAST(rootPattern:Expression[]):Expression[]{//UNSTABLE
+		const {Expression} = parseIntoOperatorSyntaxTree;
+		link_up_auto_parameters:{//links '#' patterns with their respective function/statement
+			class Context{
+				constructor(data={}){Object.assign(this,data);}
+				function?:Expression;//'#name' and '#\'
+				class?:Expression;//'#/'
+				class?:Expression;//'#/'
+			}
+			class StatementTree{
+				constructor(data={}){Object.assign(this,data);}
+				parent:Expression;//:statement
+				statement:Expression;
+			}
+			class Parameter{
+				constructor(data={}){Object.assign(this,data);}
+				path:ParamPath;
+				name:String|Symbol;
+			}
+			type ParamPath = ((String|Symbol)|Int|Tree<Exp&property_chain>)[];//Parameter|Map<String|Symbol,Params>|Params[];
+			function forEachExp(exps:Expression[],context:Context,params?:ParamPath){
+				for(let exp of exps)forEach(exps,context,params)
+			}
+			function forEachExpSingle(exp:Expression,context:Context,params?:ParamPath){
+				match(exps.wordSymbol.type,[
+					[[SyntaxTree.type.value,SyntaxTree.type.label],_=>{}],
+					[[SyntaxTree.type.bracket],_=>{
+						const bracket = exp;
+						if(!!params){
+							if(bracket.wordSymbol.word == "["){//array
+								bracket.forEach((exp,i)=>forEachExpSingle(exp,contexts,[...params,i]));
+								return;
+							}
+							if(bracket.wordSymbol.word == "("){//tuple/struct
+								let i=0;
+								for(let exp of bracket){
+									if(exp.wordSymbol.subtype == SyntaxTree.subtype.declaration){//':'
+										let names:String|Symbol|Exp<SyntaxTree.type.Bracket>|Exp<"$"> = [];
+										let propertyChain = exp.args[0];
+										todo("use while loop to extract property names")
+										forEachExpSingle(exp,contexts,[...params,...names]);
+									}else{
+										forEachExpSingle(exp,contexts,[...params,i]);
+										i++;
+									}
+								}
+							}
+						}
+						forEachExp(exp.contence,context,params)
+					}],
+					[[SyntaxTree.type.operator,context]],
+					[SyntaxTree.type.sepparator,()=>assert.impossible("is removed by AST generator")],
+				])
+			}
+			forEachExp(rootPattern,new Context(),null)
+		}
+		return rootPattern;
+	}
 //----
 	//for each in tree
 		function forEachInTree(
@@ -1415,5 +1474,5 @@ let {data:a,fileName} = (()=>{
 	return {fileName,data};
 })();
 //a="a.b := 2;Coords := \(*$$:;#x:=0;#y:=0);";
-if(0)compile('\\a#b=0#c:10');
+if(0)compile('\\#,a');//'\\a#b=0#c:10');
 else try{compile(a)}catch(e){console.error(e)};

@@ -365,3 +365,4 @@ mod signal_polyfill : {
 		signals:[]
 	);
 };
+a.b.c.d.e.f
