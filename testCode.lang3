@@ -105,7 +105,7 @@
 		assert index < length,
 	};
 //idea: auto named parameters
-	
+//idea: '::=' instead of 'is'
 type:$$;
 class_polyfill:\prototype:
 	ref \data:{
@@ -308,8 +308,8 @@ struct(
 		print,"{result}"
 	;
 	match result {
-		.Ok(value) => value;
-		.Err(err) => err?;
+		.Ok(value) => value;//'.Ok' is syntax sugar for 'result.$match.Ok'; using '.Name' where the root object 'Result' is infered by the type of 'result' 
+		Result.Err(err) => err?;
 	};
 };
 {
@@ -365,4 +365,5 @@ mod signal_polyfill : {
 		signals:[]
 	);
 };
-a.b.c.d.e.f
+a.b.c.d.e.f;
+(a.b:2):(a:(b:2));

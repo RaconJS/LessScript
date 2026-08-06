@@ -21,7 +21,7 @@
 				mul:\a:b=a*b;
 				baz:\a:b:c=;
 			);
-			destructured_function:\()
+			destructured_function:\();
 			sum:\#.>0<:\#+#;
 		//function calls
 			a:\;b:\;c:\;d:\;foo:\;bar:\;//using these functions for examples ; `a:\` == `let a = ()=>undefined` in javascript
