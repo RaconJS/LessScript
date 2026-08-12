@@ -74,9 +74,9 @@
 	//can be used for keyword property names
 		//
 	{
-		a:2
+		a:2;
 		(
-			.a:4
+			.a:4;
 			£assert a == 2;//exp_a £ exp_b === exp_a
 		)
 	};
@@ -114,6 +114,7 @@ class_polyfill:\prototype:
 		protoTypeInstance:prototype.$*.=,\method:\method,self<:..#..;
 		prototypeInstances:(prototype);//can contain the prototypes for multiple classes
 			//each prototype contain
+		prototypes:[prototype];
 		self=ref(
 			& $* : protoTypeInstance;//injects all of protoTypeInstances
 			& $* : prototypeInstances.>,()<:\#sum.+=#value;//injects rest of references
@@ -211,7 +212,7 @@ struct(
 };//JS: };
 {
 	a:mod (
-		*:@(//makes all public keys private (i.e. belong to the 'mod')
+		*:@(//'@' makes all public keys private (i.e. belong to the 'mod')
 			a:1;
 			b:2;
 			c:3;
@@ -223,6 +224,7 @@ struct(
 	);
 	a.get_a,;
 	a.mut_a, = 2;
+	assert a.a == undefined == {};
 };
 {
 	normal:\##.>0<:\##+1.random,;
@@ -365,5 +367,26 @@ mod signal_polyfill : {
 		signals:[]
 	);
 };
+
+
+{//idea: '.#key_exp' or '.@$'
+	//'.#key_exp' is similar to '.$key_exp' except all properties of 'key_exp' are accessable publicly {like javascript prototypes}
+	FooSymbol::Symbol:();
+	BarSymbol::Symbol:();
+	obj:(
+		$FooSymbol:(name:"foo");
+		$BarSymbol:(name:"bar");
+	);
+	assert obj.$* == [FooSymbol;BarSymbol];
+	assert !obj.name;
+	obj:(
+		#FooSymbol:(name:"foo");
+		$BarSymbol:(name:"bar");
+	);
+	assert obj.name == foo == obj.$FooSymbol.foo;
+};
 a.b.c.d.e.f;
 (a.b:2):(a:(b:2));
+{::T:a=exp;};
+foo::T:bar;
+(a:p1;p2;:a)
