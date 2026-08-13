@@ -895,17 +895,10 @@ const fs = Deno;//require("fs");
 				}
 			}
 			static Bracket = class Bracket extends Expression {//for 'a:>b|>foo,c<:d'
-				constructor(){super(...arguments);let afix = this.afix;delete this.afix};
 				//super.contence:Expression[] ; note: using 'super.___' for properties used from parent class
 				//super.wordSymbol?:WordSymbol;
 				args:Expression[1] = [undefined];
 				signitureExp?:Expression = null;
-				#afix;//TEST
-				get afix(){return this.#afix};//TEST
-				set afix(v){//TEST
-					if(this.#afix!=0)loga("??",v,this+"",Error());
-					this.#afix = v
-				};
 				toTree():Tree<Expression>[]{return this.contence}
 				toString(){
 					return this.wordSymbol + " " + this.contence + " " + this.wordSymbol.endBracket;
