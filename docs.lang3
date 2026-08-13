@@ -514,7 +514,7 @@
 				//'#@' and '#@name' always gets the next '#@' parameter so '(#@;#@)' refers to 2 different parameters
 					a:10;
 					b:();
-					if a=>if b=>(#@;#@)
+					if a=>if b=>(#?;#?)
 			#/ or #/name //Self reference class
 			#\ or #\name //self reference function
 			

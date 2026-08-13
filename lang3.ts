@@ -6,12 +6,6 @@ const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u..
 	//note: float numbers are handed during syntax parting to allow for '3.<' aswell as '3.2'
 	//TODO:handle format strings: need to combine words together when a format string is encountered
 		//currently cannot embed format strings in other format strings
-function swapBrackets(){
-	let code1 = code.split("");
-	code.replaceAll(/[\(\)\{\}]/g,(v,i)=>code1[i]={"(":"{","{":"(",")":"}","}":")"}[v]);
-	code = code1.join("");
-	console.log(code)
-}
 //{//quality of life, macro-like functions
 	function loga(...a){console.log(...a);return a[0]}
 	function logData(...a){
@@ -68,8 +62,12 @@ function swapBrackets(){
 	}
 	todo.flaggedErrors = {};
 	todo.silent = function(name?:String,state?:Any,errorFunc = e=>Error(e)){
-		todo.flaggedErrors[name] = {state,error:errorFunc};
+		todo.flaggedErrors[name] ??= {state,error:errorFunc};
 	}
+	function silentError(name?:String,state?:Any,errorFunc = e=>Error(e)){
+		silentError.flaggedErrors[name] ??= {state,error:errorFunc};
+	}
+	silentError.flaggedErrors = {};
 	function pass(v?:Any){return v}//marks a block as not meant to contain any code 
 	function forBailOld(length,onError_default=undefined){
 		//example: let n=forBailOld(array.length);while(true){n();}
@@ -98,6 +96,7 @@ function swapBrackets(){
 			let _case:MatchCase;
 			tryNext();
 			_case = setOfCases[i];
+			if(!(_case instanceof Array))throw Error(`missing case index '${i}', got '${_case}'`)
 			let condition = _case[0];
 			let then = _case[1];
 			let input:V|B = value;
@@ -164,6 +163,7 @@ function swapBrackets(){
 		if(result instanceof Error)throwError();
 		return result;
 	}
+	const closingBracketMap = {"{": "}", "[": "]", "(": ")"};
 //}//----
 const fs = Deno;//require("fs");
 //compiles simple lambda calculus
@@ -895,11 +895,18 @@ const fs = Deno;//require("fs");
 				}
 			}
 			static Bracket = class Bracket extends Expression {//for 'a:>b|>foo,c<:d'
+				constructor(){super(...arguments);let afix = this.afix;delete this.afix};
 				//super.contence:Expression[] ; note: using 'super.___' for properties used from parent class
 				//super.wordSymbol?:WordSymbol;
 				args:Expression[1] = [undefined];
 				signitureExp?:Expression = null;
-				toTree():Tree<Expression>[]{return [this.args[0]||undefined,...this.contence]}
+				#afix;//TEST
+				get afix(){return this.#afix};//TEST
+				set afix(v){//TEST
+					if(this.#afix!=0)loga("??",v,this+"",Error());
+					this.#afix = v
+				};
+				toTree():Tree<Expression>[]{return this.contence}
 				toString(){
 					return this.wordSymbol + " " + this.contence + " " + this.wordSymbol.endBracket;
 				}
@@ -1124,13 +1131,13 @@ const fs = Deno;//require("fs");
 							}
 							function handleBracketAfix(exps,i){
 								if(exps[i] instanceof Expression.Bracket && !exps[i].knownAfix){//handles `(...)` and `foo(...)`
-									exps.knownAfix = true;
+									exps[i].knownAfix = true;
 									if(!exps[i-1] || ((exps[i-1].afix & Expression.AfixType.operatorWithRightArg) && !exps[i-1].args[1])){
 										delete exps[i].operatorData;
 										exps[i].afix = Expression.AfixType.nofix;
 										return true;
 									}
-									else exps[i].afix &= Expression.AfixType.postfix;//`{}` --> nofix , `()` and `[]` --> postfix for `foo(...)` and `bar[...]`
+									else exps[i].afix = Expression.AfixType.postfix;//`{}` --> nofix , `()` and `[]` --> postfix for `foo(...)` and `bar[...]`
 								}
 								return false;
 							}
@@ -1358,7 +1365,7 @@ const fs = Deno;//require("fs");
 		return parseOperatorSyntaxTree;
 	})();
 	//const InferedProperty = Symbol("`.b` ; infered")//`.b`
-	function parseAST(rootPattern:Expression[]):Expression[]{
+	function parseAST(rootPattern:Expression[]):Expression[]{//static code parsing to add extra info ; handles function parameter indexes
 		const {Expression} = parseIntoOperatorSyntaxTree;
 		const numberOfWords = rootPattern[0].wordSymbol.errorData.file.words.length;
 		link_up_auto_parameters:{//links '#' patterns with their respective function/statement
@@ -1429,6 +1436,11 @@ const fs = Deno;//require("fs");
 		}
 		return rootPattern;
 	}
+	javascript_mods:{
+		Object.assign(Array.prototype,{
+			call(index){return this[arg]},
+		})
+	}
 	function runAST(rootPattern:Expression[]):Expression[]{
 		const {Expression} = parseIntoOperatorSyntaxTree;
 		const numberOfWords = rootPattern[0].wordSymbol.errorData.file.words.length;
@@ -1437,6 +1449,40 @@ const fs = Deno;//require("fs");
 				typeAnnotation?:Expression<"::"> & Tree<Expression>;
 			}
 			const assignSymbol = Symbol("a = b");//allows custom assignment function
+			type Name = String|Symbol;
+			type Value =
+				ValueRef|
+				ObjectValue|
+				Any & (
+					Number|
+					String|
+					Array<Any>|
+					Object|
+					Function|
+					null
+				)
+			;
+			type Index = Number&Int;
+			type Index<array> = Number&Int;//index on object `array`
+				//where: array[index] : Valid
+			const isSearched = Symbol();
+			class PropertyParentPair{
+				constructor(data={}){Object.assign(this,data);}
+				parent:Object|Array;
+				name:Name|Index;
+				value:Option<Value>;//where: value == parent[name]
+				errorWordSymbol?:WordSymbol;
+				valueExists:bool = true;//used by Namespace
+					//:false --> `a:...` can only be declared ; true --> variable already exists
+				get(){//: this:Invalid
+					return this.value;
+				}
+				set(value):Value&consumes<this>{//: this:Invalid
+					this.parent[this.name] = value;
+					return value;
+				}
+			}
+			type PropertyParentPairObjectValue = {parent:ObjectValue,name:Name,value:Value};
 			class Value{}
 			class FunctionObj{
 				constructor(data={}){Object.assign(this,data);}
@@ -1453,132 +1499,70 @@ const fs = Deno;//require("fs");
 				exp:Expression<"\\">;
 			}
 			class Context{
+				static ContextType = EnumSymbols("default","if","match","case");
+				static ParameterSymbols = EnumSymbols("#@","#?","#!","##","#/","#\\");
 				namespace:Namespace = new Namespace();
-				module:&Module
+				module:&Module;
+				contextType:ContextType = Context.ContextType.default;
+				arguments:Map<ParameterSymbols,Value[]|Value> = {};
 				constructor(data={}){Object.assign(this,data)}
 				new_child(data={}){
-					return new Context({parent:this,...data});
+					return new Context({...this,...data});
 				}
 				clone(){
 					new Context(this);
 				}
-				findVariable(name:String|Symbol|(Object&Symbol)){
-
+			}
+			class ValueRef extends PropertyParentPair{//used in expressions
+				constructor(data={}){super();Object.assign(this,data);}
+				static new(data:Option<PropertyParentPair>):Option<ValueRef>{
+					return data && new ValueRef(data);
 				}
+				deref(){return this.get();}
 			}
-			type Name = String|Symbol;
-			type Value =
-				ValueRef|
-				Function|
-				Any & (
-					Number|
-					String|
-					Array<Any>|
-					Object|
-					Function
-				)
-			;
-			class ValueRef{
-				constructor(data={}){Object.assign(this,data);}
-				value:ValueRef|Value|null;
-				errorWordSymbol?:WordSymbol;
-				valueOf(){return this.value};
-				deref(){return this.value}
-				assign(value){this.value = value}
-			}
-			class PropertyRef extends ValueRef{
-				constructor(data={}){Object.assign(this,data);}
-				object:Namespace|Value;
-				name:Name;
-				errorWordSymbol?:WordSymbol;
-				valueOf(){return this.object[name]}
-				deref(){return this.object[name]}
-				assign(value){this.object[name] = value;return value}
-			}
-			class Variable{//used for objects
-				constructor(data={}){Object.assign(this,data)}
-				value:Any|null;
-				valueOf(){return this.value};
-				exp;//debug info
-				[assignSymbol](){}
-			}
-			const isSearched = Symbol();
-			const getPropertySymbol = Symbol();
-			type PropertyParentPair = {parent:Object,name:Name,value:Value};
-			type PropertyParentPairObjectValue = {parent:ObjectValue,name:Name,value:Value};
 			class ObjectValue{
 				constructor(data={}){Object.assign(this,data)}
 				properties:Object&Map<Name,Value> = {};
 				array:Value[] = [];
-				prototypes = [];
-				assign(value){this.object[name] = value;return value}
-				[assignSymbol](value){return this.assign(value)}
-				getProperty_fromPrototype(prototype:Value,name):Option<PropertyParentPair>{
-					if(prototype == null){todo.silent("handle invalid prototype error");return undefined}
-					return prototype[getPropertySymbol]?prototype[getPropertySymbol](name):
-						Object.hasOwn(prototype,name)?{parent:prototype,name,value:prototype[name]}:
-						undefined
-					;
-				}
-				[getPropertySymbol](name):Option<PropertyParentPairObjectValue>{
-					if(this[isSearched])return null;//prevent infinite loops, from recursive prototype chains
-					this[isSearched] = true;
-					let value;
-					if(Object.hasOwn(this.properties,name))
-						value = {value:properties[name],parent:this}
-					else if(this.prototypes){
-						if(this.prototypes instanceof ObjectValue){
-
-						}
-						else if(prototype instanceof Array){
-							for(let prototype of prototypes){
-								if(value)break;
-								if(prototype == null){todo.silent("handle invalid prototype error");continue;}
-								value = prototype[getPropertySymbol]?prototype[getPropertySymbol](name):prototype[name]
-							}
-						}
-						else if(prototype instanceof Object){
-						}
-						else {
-							todo.silent("handle invalid values for `this.prototypes`");
-							return null;
-						}
-					};
-					delete this[isSearched];
-					return value;
-				}
-				static Struct = class StructValue extends ObjectValue{
-				}
-				static Array = class ArrayValue extends ObjectValue{
-				}
-
+				prototypes = null;
+				call(_self,arg_name:Value):Value{//same use as method 'Function.prototype.call' ; used for function calls
+					let name = try_getPropertyValue(this,arg_name);
+					loga("AAA",name);
+					if(typeof name == "number")return this.array[name];
+					return ValueRef.new(try_getPropertyData(this,derefValue(name)));
+				}		
 			}
 			class Namespace{
-				parent?:Namespace;
-				variables:ObjectValue | Object&Map<Name,Value>;
-				getVariableRef(name:Name):{parent,variable}{
-					return this.getVariableSelf(name)??this.parent?.getVariable();
+				constructor(data={}){Object.assign(this,data)}
+				parent?:Namespace&Tree<Namespace> = null;
+				variables:ObjectValue | Object&Map<Name,Value> = {};
+				getVariableRef(name:Name,isDeclaration):Option<PropertyParentPair> & PropertyParentPair|null{
+					//assume: this.parent:Tree<Namespace> ; it will stack overflow otherwise (i.e. will not crash computer from RAM use)
+					let value = this.getVariableSelf(name)??this.parent?.getVariableRef();
+					if(!isDeclaration && value?.valueExists === false)return null;
+					return value;
+				}
+				getVariableRefOrDeclareData(name:Name):Option<PropertyParentPair>{
+					return this.getVariableRef(name)??try_getPropertyData(this.variables,name);
 				}
 				getVariableSelf(name):Option<VariableRef>{
-					todo();
-					return this.variables[getPropertySymbol]?this.variables[getPropertySymbol]():this.variables[name];
+					return try_getPropertyData(this.variables,name);
 				}
-				assignVariable(name:Name,value:Value){
-					return this.variables[name] = value;
+				assignVariable(name:Name,value:Value):Option<Value>{
+					return this.getVariableRef(name,true)?.set?.(value)??null;
 				}
 				declareVariable(name:Name,value?:Value){
 					todo.silent("handle modules");
 					return this.assignVariable(name,value??null);
 				}
 			}
-			class Module{
+			class ModuleObj{
 				privateSymbolMap:Map<String,Symbol>;
 			}
 		//----
-
-		const ContextType = EnumSymbols("struct","array","block");
 		const AllPrivateSymbols = Symbol("a.$*");
 		const AllSymbols = Symbol("a.*");
+		const compilerOnlySymbols = [isSearched];//symbols that can both be {added to variables} and {that should not be accessable by the language user}
 		const evalCode = {
 			forEach_exps(exps:Expression[],context:Context):Option<Value>{//`...` in `{...}`
 				let lastValue;
@@ -1588,7 +1572,7 @@ const fs = Deno;//require("fs");
 				}
 				return lastValue;
 			},
-			statement(exp:Option<Expression>,context:Context,bracketType:ContextType = ContextType.block):Value{
+			statement(exp:Option<Expression>,context:Context):Value{
 				assert(!!context)
 				if(!exp)return undefined;
 				return match(exp.wordSymbol.type,[
@@ -1601,67 +1585,72 @@ const fs = Deno;//require("fs");
 						],()=>exp.wordSymbol.value],
 						[SyntaxTree.subtype.formatString,()=>todo("handle format strings")],
 					])],
-					[SyntaxTree.type.label,()=>context.namespace.getVariable(exp.wordSymbol.word)],
-					[SyntaxTree.type.bracket,()=>{
-						let namespace
-						let contextType = match(exp.wordSymbol.word,[
-							["{",()=>{
-								let i=0;
-								const firstStatement:Option<Expression> = exp.contence[0];
-								const blockExp = exp;
-								let lastStatementToEval:Option<Expression> = null;//executes expression at the end ; `{=last_exp;...}` ; e.g. `{=c;a;b}`
-								if(!firstStatement.args[0]&&[":", "::", "="].includes(firstStatement?.wordSymbol?.word)){//'{=exp;}'
-									match(firstStatement?.wordSymbol?.word,[
-										["::",()=>{blockExp.typeAnnotation = firstStatement}],
-										[":",()=>{
-											if(":=".includes(firstStatement.args[1]?.wordSymbol?.word)){
-												lastStatementToEval = firstStatement.args[1];
-											}
-											evalCode.declareVariables(firstStatement.args[1],undefined,context);
-										}],
-										["=",()=>{
-											lastStatementToEval = firstStatement;
-										}],
-									],()=>{});
-									i+=1;
+					[SyntaxTree.type.label,()=>context.namespace.getVariableRef(exp.wordSymbol.word)],
+					[SyntaxTree.type.bracket,()=>match(exp.wordSymbol.word,[
+						["{",()=>{
+							let i=0;
+							const firstStatement:Option<Expression> = exp.contence[0];
+							const blockExp = exp;
+							let lastStatementToEval:Option<Expression> = null;//executes expression at the end ; `{=last_exp;...}` ; e.g. `{=c;a;b}`
+							if(!firstStatement.args[0]&&[":", "::", "="].includes(firstStatement?.wordSymbol?.word)){//'{=exp;}'
+								match(firstStatement?.wordSymbol?.word,[
+									["::",()=>{blockExp.typeAnnotation = firstStatement}],
+									[":",()=>{
+										if(":=".includes(firstStatement.args[1]?.wordSymbol?.word)){
+											lastStatementToEval = firstStatement.args[1];
+										}
+										evalCode.declareVariables(firstStatement.args[1],undefined,context);
+									}],
+									["=",()=>{
+										lastStatementToEval = firstStatement;
+									}],
+								],()=>{});
+								i+=1;
+							}
+							let lastValue = undefined;
+							for(;i<blockExp.contence.length;i++){
+								lastValue = evalCode.statement(blockExp[i],context);
+							}
+							if(lastStatementToEval)lastValue = evalCode.statement(lastStatementToEval,context);
+							return lastValue;
+						}],
+						[["[","("],()=>{
+							let functionObj:Option<Value> = undefined;
+							let isFunctionCall = false;
+							if(exp.afix == Expression.AfixType.postfix){//function call
+								isFunctionCall = true;
+								functionObj = evalCode.statement(exp.args[0],context);
+								loga("?",functionObj);
+							}
+							let variable = new ObjectValue();
+							let namespaceObj = new Namespace({parent:context.namespace,variables:variable});
+							let innerContext = context.new_child({namespace:namespaceObj});
+							const bracket_exp = exp;
+							for(let exp of bracket_exp.contence){
+								let value = evalCode.statement(exp,innerContext);
+								if(!(bracket_exp.wordSymbol.word=="("&&exp.wordSymbol.word==":")){
+									variable.array.push(value);//for tuples, pattern `a:b` does not add item
 								}
-								let lastValue = undefined;
-								for(;i<blockExp.contence.length;i++){
-									lastValue = evalCode.statement(blockExp[i],context);
-								}
-								if(lastStatementToEval)lastValue = evalCode.statement(lastStatementToEval,context);
-								return lastValue;
-							}],
-							[["[","("],()=>{
-								let variable = new ObjectValue({array:[]});
-								let namespaceObj = new Namespace({parent:context.namespace,variables:variable});
-								let innerContext = context.new_child({namespace:namespaceObj});
-								const bracket_exp = exp;
-								for(let exp of bracket_exp.contence){
-									let value = evalCode.statement(exp,innerContext);
-									variable.array.push(value);
-									if(bracket_exp.wordSymbol.word=="["||exp.wordSymbol.word!=":")
-										variable.array.push(value);//for tuples, pattern `a:b` does not add item
-								}
-								return variable;
-							}],
-						])
-					}],
+							}
+							if(isFunctionCall){
+								todo.silent("BODGED; handle pipe operators");
+								return functionCall(functionObj,[variable]);
+							}
+							return variable;
+						}],
+					])],
 					[SyntaxTree.type.operator,()=>{
 						const args = exp.args;
 						const [x,y] = args;//for numeric operators
-						function numericOperator(foo){
+						function numericOperator(foo:(x:Value,y:Value)=>Value):Value{
 							return foo(evalCode.statement(x,context),evalCode.statement(y,context));
 						}
 						return match(exp.wordSymbol.word,[
 							["\\",()=>new FunctionObj({exp,context})],//function `\exp`
 							[word=>word=="/"&&exp.afix == Expression.AfixType.prefix,()=>new ClassObj({exp,context})],//class `/exp`
-							["assert",()=>{
-								let value = evalCode.statement(exp.args[1],context);
-								if(!value)exp.throwError("assertion","assertion failed",e=>Error(e))
-							}],
 							[":",()=>{
 								let declaredValues = evalCode.declareVariables(exp.args[0],exp.args[1],context);
+								return declaredValues;
 							}],
 							["=",()=>todo("handle case '='")],
 							[".",()=>{
@@ -1673,19 +1662,63 @@ const fs = Deno;//require("fs");
 									exp.args[1].wordSymbol.word:
 									evalCode.statement(exp.args[1],context)
 								;
-								try{value = parent[exp.args[1]]}catch{
+								if(parent == null){//TODO:silent this error
 									exp.wordSymbol.throwError("null",`unable to get properties on '${parent}'`,e=>Error(e));
 								}
+								value = parent[exp.args[1]];
 								if(!!exp.args[2]){
-									value = functionCall(value,[evalCode.statement(exp.args[2],context)]);
+									value = functionCall(value,[evalCode.statement(exp.args[2],context)],todo.silent("get `#.` from namespace's class instance object"));
 								}
 								return value;
 							}],
+
+							//keyword operators
+							["=>",()=>{
+								let argument = evalCode.statement(exp.args[0],context);
+								let innerContext = context.new_child();
+								return match(context.contextType,[
+									[[Context.ContextType.default],()=>todo("use argument as #@ in right exp")],
+									[[Context.ContextType.default],()=>{
+										innerContext
+									}]
+								]);
+							}],
+							["assert",()=>{
+								let value = evalCode.statement(exp.args[1],context);
+								if(!value)exp.wordSymbol.throwError("assertion","assertion failed",e=>Error(e))
+							}],
+
 							[
 								word=>exp.afix == Expression.AfixType.infix &&
-								word.match(/[+\-*%&|^~\/]|>{1,3}|<{1,2}|(?:[!<>])=|[!=]?==/),
-								()=>numericOperator((x,y)=>
-									new Function("x,y",`x ${exp.wordSymbol.word} y`)
+								word.match(/[+\-*%&|^\/]|>{1,3}|<{1,2}|(?:[!<>])=|[!=]?==/),
+								()=>numericOperator(
+									new Function("x,y",`return x ${exp.wordSymbol.word} y`)
+								)
+							],
+							[//nor
+								word=>exp.afix == Expression.AfixType.infix && word == "~",
+								()=>numericOperator((x,y)=>~(x|y))
+							],
+							[//logical nor
+								word=>exp.afix == Expression.AfixType.infix && word == "~~",
+								()=>todo("handle logical nor, with lazy evaluation")//numericOperator((x,y)=>x||y)
+							],
+							[//logical xor
+								word=>exp.afix == Expression.AfixType.infix && word == "^^",
+								()=>numericOperator((x,y)=>!x?y:!y?x:false)
+							],
+							[
+								word=>exp.afix == Expression.AfixType.prefix &&
+								word.match(/[+\-~]|>{1,3}|<{1,2}|(?:[!<>])=|[!=]?==/),
+								()=>numericOperator(
+									new Function("_,x",`return ${exp.wordSymbol.word} x`)
+								)
+							],
+							[
+								word=>exp.afix == Expression.AfixType.postfix &&
+								word.match(/[+~!]|>{1,3}|<{1,2}|(?:[!<>])=|[!=]?==/),
+								()=>numericOperator(
+									new Function("x,_",`return ${exp.wordSymbol.word} x`)
 								)
 							],
 						]);//()=>todo.silent()
@@ -1715,16 +1748,16 @@ const fs = Deno;//require("fs");
 					}],
 					[SyntaxTree.type.bracket,()=>{//''
 						todo("destructure support; ")
-					}]
+					}],
 					[SyntaxTree.type.operator,()=>
 						parameter_exp.wordSymbol.throwError("syntax",`in declaration pattern: expected name, found operator '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
 					],
 				]);
 			},
 		};
-		function functionCall(foo,args:Value[]){
+		function functionCall(foo,args:Value[],self){
 			todo.silent("BODGED");
-			return foo(...args)
+			return foo.call(self,...args)
 		}
 		function assign(a:Value,b:Value,errorWordSymbol?:WordSymbol):Result<Value&b,Throw>{//`a = b`
 			//a = derefValue(a);
@@ -1739,15 +1772,99 @@ const fs = Deno;//require("fs");
 			}
 			return b;
 		}
+		//get properties & keys:
+			function try_getPropertyData(parent:Value,name:Name|Index,errorWordSymbol?:WordSymbol):Option<PropertyParentPair>{
+				parent = derefValue(parent);
+				if(parent === null || parent === undefined){
+					silentError("getting property from null object");
+					return null;
+				}
+				const constructor:Class = Object.getPrototypeOf(parent).constructor;
+				assume(parent instanceof constructor);
+				return match(parent,[
+					[_=>parent instanceof ObjectValue,()=>{
+						if(parent[isSearched])return null;//prevent infinite loops, from recursive prototype chains
+						parent[isSearched] = true;
+						let data:Option<PropertyParentPair>;getData:{
+							if(Object.hasOwn(parent.properties,name))
+								data = new PropertyParentPair({
+									parent:parent.properties,
+									name,
+									value:parent.properties[name],
+									errorWordSymbol,
+								});
+							else if(parent.prototypes){
+								const asArray:Option<Value[]> = getAsArray(parent.prototypes);
+								const asObject:Option<Object> = valueToPropertiesObject(parent.prototypes);
+								if(asArray){
+									for(const prototype of prototypes){
+										if(prototype == null){silentError("null prototype");continue;}
+										data = try_getPropertyData(prototype,name,errorWordSymbol);
+										if(data)break getData;
+									}
+								}
+								if(asObject){
+									const keyValuePairs = [
+										getAsPropertiesSymbols(asObject),//these are the main properties, the type inbuilt classes use `/...`
+										getAsProperties(asObject),
+									];
+									for(const [key,value] of Object.keys(asObject)){
+										assert(Object.hasOwn(asObject,key));
+										const prototype = value;
+										if(prototype == null){silentError("null prototype");continue;}
+										data = try_getPropertyData(prototype,name,errorWordSymbol);
+										if(data)break getData;
+									}
+								}
+							}
+							if(!data)data = new PropertyParentPair({
+								parent:parent.properties,
+								name,
+								value:undefined,
+								errorWordSymbol,
+								valueExists:false,
+							});
+						}
+						delete parent[isSearched];
+						return data;
+					}],
+					[_=>
+						parent instanceof FunctionObj ||
+						parent instanceof ClassObj ||
+						parent instanceof ModuleObj
+					,()=>todo("handle getting/setting properties to functions")],
+				],()=>new PropertyParentPair({parent,name,value:parent[name]}))
+			}
+			function try_getPropertyValue(parent:Value,name_value:Value,errorWordSymbol?:WordSymbol):Value{//returns dereferenced value
+				let data = try_getPropertyData(parent,derefValue(name_value),errorWordSymbol);
+				loga(data)
+				return data && data.get();
+			}
+			function getAsArray(value:Value):Option<Array>{
+				if(value instanceof Array)return value;
+				if(value instanceof ObjectValue)return value.array;
+			}
+			function valueToPropertiesObject(value:Value):Option<Object>{
+				if(value instanceof ObjectValue)return value.properties;
+				if(value instanceof Object)return value;
+				return null;
+			}
+			function getAsProperties(object?:Object):[key:Name,value][]{
+				if(!object)return [];
+				return Object.keys(object).map(key=>[key,object[key]]);
+			}
+			function getAsPropertiesSymbols(object?:Object):[key:Name,value][]{
+				if(!object)return [];
+				assert(!(isSearched in object))
+				return Object.getOwnPropertySymbols(object)
+					.map(key=>[key,object[key]])
+					.filter(([key,_])=>!compilerOnlySymbols.includes(key))
+				;
+			}
+		//----
 		function derefValue(value:Value){
 			if(value instanceof ValueRef)return value.deref();
 			return value;
-		}
-		function getProperty(value:Value,name:String|Symbol):Option<Value>{//for 'a.b'
-			if(value instanceof Variable){
-				return value.getVariableSelf(name);
-			}
-			todo();
 		}
 		return evalCode.forEach_exps(rootPattern,new Context);
 	}
@@ -1796,18 +1913,27 @@ const fs = Deno;//require("fs");
 	//----
 function printTree(abstractSyntaxTree):String{//a TEST function for debugging
 	let len = 0;
-	let string = (function forEach(a:Expression,i=-4,a1?:Expression,isFunctionCall:bool){
+	let string = (function forEach(exp:Expression,indent=-4,parent?:Expression,isFunctionCall:bool){
+		const i = indent;
+		const a = exp;
 		len++;
+		if(!isFunctionCall && "([{".includes(a.wordSymbol)&&a.args[0]){
+			return "\t".repeat(i)+"[[function call]]"+"\n"
+				+forEach(a.args[0],i+1,a,true)
+				+"\n"
+				+forEach(a,i+1,a,true)
+			;
+		}
 		return "\t".repeat(i)+(!a?a:
-			(a.wordSymbol??a+"") + (isFunctionCall?" (bracket function call)":"")
-			+("([{".includes(a.wordSymbol)&&a.args[0] ? "\n"+forEach({args:a.args},i+1,a,true) : "")
-			+(a.toTree?(a.toTree().length>0?"\n":"")+a.toTree().map((v,j)=>forEach(v,i+1,a)).join("\n")
+			(a.wordSymbol??a+"")// name
+			+(a.toTree?// contence/arguments
+				(a.toTree().length>0?"\n":"")+a.toTree().map((v,j)=>forEach(v,i+1,a)).join("\n")
 				:(a.args?"\n"+a.args.map(v=>forEach(v,i+1,a)).join("\n"):"")
 			)
 			//+(a.contence?"\n"+a.contence.map(v=>forEach(v,i+1,a)).join((i-=1,"\n")):"")
 			//+(a.args?"\n"+a.args.map(v=>forEach(v,i+1,a)).join("\n"):"")
 		);
-	})({args:abstractSyntaxTree},0);
+	})({args:abstractSyntaxTree,wordSymbol:"[[root]]"},0);
 	return string + "\n" + len;
 }
 function compile(text,throwError,fileName="main file"){
@@ -1821,8 +1947,8 @@ function compile(text,throwError,fileName="main file"){
 		parseAST(abstractSyntaxTree);//:mutates rootPattern
 		let value = runAST(abstractSyntaxTree);
 		//assert(abstractSyntaxTree == rootPattern);
-		//console.error(printTree(abstractSyntaxTree));
-		console.error(printTree([value]));
+		console.error(printTree(abstractSyntaxTree));
+		console.error(value);
 	}
 	catch(error){
 		throw error;
@@ -1832,10 +1958,10 @@ function compile(text,throwError,fileName="main file"){
 	}
 }
 let {data:a,fileName} = (()=>{
-	const fileName = "testCode.lang3";
+	const fileName = Deno.args[0]??"testCode.lang3";
 	const data = getFile_expect(fileName);
 	return {fileName,data};
 })();
 //a="a.b := 2;Coords := \(*$$:;#x:=0;#y:=0);";
-if(0)compile('/a\\b');
+if(1)compile(`[1;2;3][0]`);
 else try{compile(a)}catch(e){console.error(e)};
