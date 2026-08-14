@@ -61,8 +61,9 @@ const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u..
 		}
 	}
 	todo.flaggedErrors = {};
-	todo.silent = function(name?:String,state?:Any,errorFunc = e=>Error(e)){
+	todo.silent = function(name?:String,returnValue,state?:Any,errorFunc = e=>Error(e)){
 		todo.flaggedErrors[name] ??= {state,error:errorFunc};
+		return returnValue;
 	}
 	function silentError(name?:String,state?:Any,errorFunc = e=>Error(e)){
 		silentError.flaggedErrors[name] ??= {state,error:errorFunc};
@@ -319,6 +320,7 @@ const fs = Deno;//require("fs");
 					"number",
 					"bool",
 					"object",
+					"null",// 'null', ';' in ';;'
 					//UNUSED: "undefined",//'undefined' == '{}'
 				// label
 					"operator",//operators e.g. '>' '=' in '.>' '.=' ; allows for 'a.>foo' --> 'b.>,foo'
@@ -395,7 +397,7 @@ const fs = Deno;//require("fs");
 									word.match(/^(?:0[xo]?|[0-9])/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.number,afix:SyntaxTree.AfixType.nofix} :
 									word.match(/^(?:NaN|Infinity)$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.number,afix:SyntaxTree.AfixType.nofix} :
 									word.match(/^(?:true|false)$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.bool,afix:SyntaxTree.AfixType.nofix} :
-									word.match(/^null$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.object,afix:SyntaxTree.AfixType.nofix} :
+									word.match(/^null$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.null,afix:SyntaxTree.AfixType.nofix} :
 									//word.match(/^undefined$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.undefined,afix:SyntaxTree.AfixType.nofix} :
 									word.match(/^(?:([+\-*%&|^~])\1?|>{1,3}|<{1,2}|[!\/<>])$/) ? {type:SyntaxTree.type.operator} ://numerical operators
 									word.match(/^([!<>]=?|[!=]?==)$/) ? {type:SyntaxTree.type.operator} :
@@ -697,7 +699,10 @@ const fs = Deno;//require("fs");
 						],
 						"::"      :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,optionalArg:[0,1],prefixIgnorePreceedence:true},
 						"::\x00"  :{afix:OperatorData.AfixType.postfix,parameter:OperatorData.left,optionalArg:[0,1]},
-						"£"       :{afix:OperatorData.AfixType.infix,optionalArg:[1,0]},//isInverseBracketing is false for: 'a £b £c' --> '(a £b) £c' <--> 'a £{b;c}'
+						"£"       :[
+							{afix:OperatorData.AfixType.prefix},
+							{afix:OperatorData.AfixType.infix,optionalArg:[1,0]}
+						],//isInverseBracketing is false for: 'a £b £c' --> '(a £b) £c' <--> 'a £{b;c}'
 					},
 					{
 						"="       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left,isInverseBracketing:true,prefixIgnorePreceedence:true},//isInverseBracketing does: 'a=b=c' --> 'a=(b=c)'
@@ -856,6 +861,7 @@ const fs = Deno;//require("fs");
 			//wordSymbol;//:WordSymbol?
 			possibleAfix = 0b11;//:Expression.afix
 			afix;//:Expression.afix
+			isReverseOrder;//`£` in `a + £x b` ; evaluates the 2nd argument first but still returns the 1st argument
 			static defaultProceedence = 0;
 			static AfixType = SyntaxTree.AfixType;
 			static Value = class Value extends Expression {//for 'a:>b|>foo,c<:d' ; value literal constant
@@ -877,8 +883,8 @@ const fs = Deno;//require("fs");
 							[[SyntaxTree.subtype.string],()=>todo(wordSymbol)],
 							[[SyntaxTree.subtype.formatString],()=>todo(wordSymbol)],
 							[[SyntaxTree.subtype.number],()=>todo(wordSymbol)],
-							[[SyntaxTree.subtype.object],()=>wordSymbol.word=="null"?{value:null}:todo()],
-							//[[SyntaxTree.subtype.undefined],()=>({value:undefined})],
+							[[SyntaxTree.subtype.null],()=>({value:null})],
+							[[SyntaxTree.subtype.undefined],()=>({value:undefined})],
 						],)
 					});
 				}
@@ -925,7 +931,18 @@ const fs = Deno;//require("fs");
 				let expressions = [];
 				while(words && i < words.length){
 					tryNext(()=>console.error("TEST:"+words+" "+words[i]+" "+i));
-					if(";".includes(words[i])){i++;continue;}
+					if(words[i] == ";"){
+						let exp = expressions[expressions.length-1];
+						if(exp){exp.hasSepparator = true}//`exp;` ; used so `{a;}` == `null` but `{a}` == `a`
+						if(!words[i-1]||words[i-1] == ";"){//inserts an null for `(a;) --> (a;null)` and `(a;;b) --> (a;null;b)`
+							let word = words[i];
+							word.afix = 0;
+							word.type = SyntaxTree.type.value;
+							word.subtype = SyntaxTree.subtype.null;
+							expressions.push(new Expression.Value({wordSymbol:word,value:null}));
+						}
+						i++;continue;
+					}
 					let expression;
 					({index:i,expression} = this.expression(i,parent));
 					if(expression !== undefined){
@@ -1223,6 +1240,10 @@ const fs = Deno;//require("fs");
 								else if(exp.wordSymbol.word == "£"){
 									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,false,false);
 									exp.args[1] = exps.splice(i+1,1)[0];
+									if(!exp.args[0] && !!exps[i+1]){//e.g. `a + £{...} b` --> `a+b`
+										exp.args[0] = exps.splice(i+1,1)[0];
+										exp.isReverseOrder = true;
+									}
 								}
 								else{
 									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
@@ -1237,7 +1258,7 @@ const fs = Deno;//require("fs");
 								}
 							}
 							for(let proceedence = 0; proceedence <= localMaxProceedence; proceedence++){
-								function afixWrongArgumentError(exp):Never{
+									function afixWrongArgumentError(exp):Never{
 									exp.wordSymbol.throwError("syntax",`invalid argument pattern for operator '${exp.wordSymbol.word}'`,e=>Error(e));
 								}
 								function handleArgs(exps,i,proceedence):out<{i}> & mutates<exps,exps[i]>{
@@ -1445,7 +1466,7 @@ const fs = Deno;//require("fs");
 			
 			type Name = String|Symbol;
 			type Value =
-				ValueRef|
+				PropertyRef|
 				ObjectValue|
 				Any & (
 					Number|
@@ -1476,7 +1497,23 @@ const fs = Deno;//require("fs");
 					return value;
 				}
 			}
-			type PropertyParentPairObjectValue = {parent:ObjectValue,name:Name,value:Value};
+			class PropertyRef extends PropertyParentPair{//:Value ; used in expressions
+				constructor(data={}){super();Object.assign(this,data);}
+				static new(data:Option<PropertyParentPair>):Option<PropertyRef>{
+					return data && new PropertyRef(data);
+				}
+				deref(){return this.get();}
+			}
+			class ValueRef{//:Value & storable value ; '&a'
+				value;
+				get(){//: this:Invalid
+					return this.value;
+				}
+				set(value):Value&consumes<this>{//: this:Invalid
+					this.parent[this.name] = value;
+					return value;
+				}
+			}
 			class Value{}
 			class FunctionObj{
 				constructor(data={}){Object.assign(this,data);}
@@ -1507,23 +1544,17 @@ const fs = Deno;//require("fs");
 					new Context(this);
 				}
 			}
-			class ValueRef extends PropertyParentPair{//used in expressions
-				constructor(data={}){super();Object.assign(this,data);}
-				static new(data:Option<PropertyParentPair>):Option<ValueRef>{
-					return data && new ValueRef(data);
-				}
-				deref(){return this.get();}
-			}
+
 			class ObjectValue{
-				constructor(data={}){Object.assign(this,data)}
+				constructor(data={}){Object.assign(this,data);}
 				properties:Object&Map<Name,Value> = {};
 				array:Value[] = [];
 				prototypes = null;
 				call(_self,arg_name:Value):Value{//same use as method 'Function.prototype.call' ; used for function calls
 					let name = try_getPropertyValue(this,arg_name);
 					if(typeof name == "number")return this.array[name];
-					return ValueRef.new(try_getPropertyData(this,derefValue(name)));
-				}		
+					return PropertyRef.new(try_getPropertyData(this,derefValue(name)));
+				}
 			}
 			class Namespace{
 				constructor(data={}){Object.assign(this,data)}
@@ -1546,6 +1577,7 @@ const fs = Deno;//require("fs");
 				}
 				declareVariable(name:Name,value?:Value){
 					todo.silent("handle modules");
+					todo.silent("allow `a:(b:2);a.b=4;assert a[0]==a.b`; linking property and tuple index; maybe add a index<-->name' map")
 					return this.assignVariable(name,value??null);
 				}
 			}
@@ -1557,13 +1589,17 @@ const fs = Deno;//require("fs");
 		const AllSymbols = Symbol("a.*");
 		const compilerOnlySymbols = [isSearched];//symbols that can both be {added to variables} and {that should not be accessable by the language user}
 		const evalCode = {
-			forEach_exps(exps:Expression[],context:Context):Option<Value>{//`...` in `{...}`
+			forEach_exps(exps:Expression[],context:Context,forEachFunction?:(value)=>void):Option<Value>{//`...` in `{...}`
 				let lastValue;
+				let hasSepparator = false;
 				for(let exp of exps){
-					if(!exp)continue;
-					lastValue = evalCode.statement(exp,context);
+					let value = evalCode.statement(exp,context);
+					hasSepparator = exp.hasSepparator;
+					if(exp.wordSymbol.word == "£" && !exp.args[0])continue;
+					lastValue = value;
+					forEachFunction?.(value);
 				}
-				return lastValue;
+				return hasSepparator?null:lastValue;
 			},
 			statement(exp:Option<Expression>,context:Context):Value{
 				assert(!!context)
@@ -1574,18 +1610,19 @@ const fs = Deno;//require("fs");
 							SyntaxTree.subtype.string,
 							SyntaxTree.subtype.number,
 							SyntaxTree.subtype.bool,
-							SyntaxTree.subtype.object
+							SyntaxTree.subtype.object,
+							SyntaxTree.subtype.null,
 						],()=>exp.wordSymbol.value],
 						[SyntaxTree.subtype.formatString,()=>todo("handle format strings")],
 					])],
-					[SyntaxTree.type.label,()=>ValueRef.new(context.namespace.getVariableRef(exp.wordSymbol.word))],
+					[SyntaxTree.type.label,()=>PropertyRef.new(context.namespace.getVariableRef(exp.wordSymbol.word))],
 					[SyntaxTree.type.bracket,()=>match(exp.wordSymbol.word,[
 						["{",()=>{
 							let i=0;
 							const firstStatement:Option<Expression> = exp.contence[0];
 							const blockExp = exp;
 							let lastStatementToEval:Option<Expression> = null;//executes expression at the end ; `{=last_exp;...}` ; e.g. `{=c;a;b}`
-							if(!firstStatement.args[0]&&[":", "::", "="].includes(firstStatement?.wordSymbol?.word)){//'{=exp;}'
+							if(!firstStatement?.args?.[0]&&[":", "::", "="].includes(firstStatement?.wordSymbol?.word)){//'{=exp;}'
 								match(firstStatement?.wordSymbol?.word,[
 									["::",()=>{blockExp.typeAnnotation = firstStatement}],
 									[":",()=>{
@@ -1600,10 +1637,7 @@ const fs = Deno;//require("fs");
 								],()=>{});
 								i+=1;
 							}
-							let lastValue = undefined;
-							for(;i<blockExp.contence.length;i++){
-								lastValue = evalCode.statement(blockExp[i],context);
-							}
+							let lastValue = evalCode.forEach_exps(blockExp.contence,context);
 							if(lastStatementToEval)lastValue = evalCode.statement(lastStatementToEval,context);
 							return lastValue;
 						}],
@@ -1618,12 +1652,11 @@ const fs = Deno;//require("fs");
 							let namespaceObj = new Namespace({parent:context.namespace,variables:variable});
 							let innerContext = context.new_child({namespace:namespaceObj});
 							const bracket_exp = exp;
-							for(let exp of bracket_exp.contence){
-								let value = derefValue(evalCode.statement(exp,innerContext));
+							void evalCode.forEach_exps(bracket_exp.contence,context,value=>{
 								if(!(bracket_exp.wordSymbol.word=="("&&exp.wordSymbol.word==":")){
 									variable.array.push(value);//for tuples, pattern `a:b` does not add item
 								}
-							}
+							});
 							if(isFunctionCall){
 								todo.silent("BODGED; handle pipe operators");
 								return functionCall(functionObj,variable);
@@ -1647,7 +1680,10 @@ const fs = Deno;//require("fs");
 								let declaredValues = evalCode.declareVariables(exp.args[0],exp.args[1],context);
 								return declaredValues;
 							}],
-							["=",()=>todo("handle case '='")],
+							["=",()=>{
+								let assignedValues = evalCode.assignVariables(exp.args[0],exp.args[1],context);
+								return assignedValues;
+							}],
 							[".",()=>{
 								let parent = derefValue(evalCode.statement(exp.args[0],context));
 								let value;
@@ -1666,7 +1702,70 @@ const fs = Deno;//require("fs");
 								}
 								return value;
 							}],
-
+							["£",()=>{//`a£b` --> `a`
+								const isReverseOrder = exp.isReverseOrder;
+								const evaluationOrder:Expression[2] = isReverseOrder?[exp.args[1],exp.args[0]]:exp.args;
+								const values = evaluationOrder.map(arg_exp=>evalCode.statement(arg_exp,context));
+								return isReverseOrder?values[1]:values[0];
+							}],
+							[word=>word == "&" && [Expression.AfixType.prefix,Expression.AfixType.postfix].includes(exp.afix),()=>{//'&a' reference
+								let value:Value = evalCode.statement(exp.args[0]??exp.args[1],context);
+								todo.silent("handle `&a` references properly");
+								return value;//BODGED
+							}],
+							...[//numeric and logical operators:
+								[
+									word=>exp.afix == Expression.AfixType.infix &&
+									word.match(/[+\-*%&|^\/]|>{1,3}|<{1,2}/),
+									()=>numericOperator(
+										new Function("x,y",`return x ${exp.wordSymbol.word} y`)
+									)
+								],
+								[//nor
+									word=>exp.afix == Expression.AfixType.infix && word == "~",
+									()=>numericOperator((x,y)=>~(x|y))
+								],
+								[//logical nor
+									word=>exp.afix == Expression.AfixType.infix && word == "~~",
+									()=>todo("handle logical nor, with lazy evaluation")//numericOperator((x,y)=>x||y)
+								],
+								[//logical xor
+									word=>exp.afix == Expression.AfixType.infix && word == "^^",
+									()=>numericOperator((x,y)=>!x?y:!y?x:false)
+								],
+								[//comparisons ; `a==b==c` --> `{a==b} && {b==c}`
+									word=>exp.afix == Expression.AfixType.infix &&
+									word.match(/[<>]=?|[!=]==?/),
+									()=>{
+										function handleComparisonChain(exp){
+											if(exp.afix == Expression.AfixType.infix && exp.wordSymbol.word.match(/[<>]=?|[!=]==?/)){
+												const foo = new Function("x,y",`return x ${exp.wordSymbol.word} y`);
+												return foo(
+													derefValue(handleComparisonChain(exp.args[0])),
+													derefValue(handleComparisonChain(exp.args[1])),
+												);
+											}else{
+												return evalCode.statement(exp,context);
+											}
+										}
+										return handleComparisonChain(exp);
+									},
+								],
+								[
+									word=>exp.afix == Expression.AfixType.prefix &&
+									word.match(/[+\-~]/),
+									()=>numericOperator(
+										new Function("_,x",`return ${exp.wordSymbol.word} x`)
+									)
+								],
+								[
+									word=>exp.afix == Expression.AfixType.postfix &&
+									word.match(/[+~!]/),
+									()=>numericOperator(
+										new Function("x,_",`return ${exp.wordSymbol.word} x`)
+									)
+								],
+							],//----
 							//keyword operators
 							["=>",()=>{
 								let argument = derefValue(evalCode.statement(exp.args[0],context));
@@ -1682,41 +1781,7 @@ const fs = Deno;//require("fs");
 								let value = derefValue(evalCode.statement(exp.args[1],context));
 								if(!value)exp.wordSymbol.throwError("assertion","assertion failed",e=>Error(e))
 							}],
-
-							[
-								word=>exp.afix == Expression.AfixType.infix &&
-								word.match(/[+\-*%&|^\/]|>{1,3}|<{1,2}|(?:[!<>])=|[!=]?==/),
-								()=>numericOperator(
-									new Function("x,y",`return x ${exp.wordSymbol.word} y`)
-								)
-							],
-							[//nor
-								word=>exp.afix == Expression.AfixType.infix && word == "~",
-								()=>numericOperator((x,y)=>~(x|y))
-							],
-							[//logical nor
-								word=>exp.afix == Expression.AfixType.infix && word == "~~",
-								()=>todo("handle logical nor, with lazy evaluation")//numericOperator((x,y)=>x||y)
-							],
-							[//logical xor
-								word=>exp.afix == Expression.AfixType.infix && word == "^^",
-								()=>numericOperator((x,y)=>!x?y:!y?x:false)
-							],
-							[
-								word=>exp.afix == Expression.AfixType.prefix &&
-								word.match(/[+\-~]|>{1,3}|<{1,2}|(?:[!<>])=|[!=]?==/),
-								()=>numericOperator(
-									new Function("_,x",`return ${exp.wordSymbol.word} x`)
-								)
-							],
-							[
-								word=>exp.afix == Expression.AfixType.postfix &&
-								word.match(/[+~!]|>{1,3}|<{1,2}|(?:[!<>])=|[!=]?==/),
-								()=>numericOperator(
-									new Function("x,_",`return ${exp.wordSymbol.word} x`)
-								)
-							],
-						]);//()=>todo.silent()
+						],);//()=>todo.silent()
 					}],
 				]);
 			},
@@ -1734,18 +1799,27 @@ const fs = Deno;//require("fs");
 				return ;
 			},
 			declareVariables(parameter_exp:Expression,assign:Expression,context:Context):&mutate<context>{
-				match(parameter_exp.wordSymbol.type,[
-					[SyntaxTree.type.value,()=>
-						parameter_exp.wordSymbol.throwError("syntax",`in declaration pattern: expected name, found value '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
-					],
+				return this.assignVariables(parameter_exp,assign,context,true);
+			},
+			assignVariables(parameter_exp:Expression,assign:Expression,context:Context,isDeclaration = false):&mutate<context>{
+				return match(parameter_exp.wordSymbol.type,[
+					[SyntaxTree.type.value,()=>{
+						if([SyntaxTree.subtype.string,SyntaxTree.subtype.formatString].includes(parameter_exp.wordSymbol.subtype)){
+							todo("handle strings ; allow for e.g. `'a':b;` and `a.'b'=c;`");
+						}
+						parameter_exp.wordSymbol.throwError("syntax",`in ${["assignment", "declaration"][!!isDeclaration]} pattern: expected name, found value '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
+					}],
 					[SyntaxTree.type.label,()=>{//`a:b`
-						context.namespace.declareVariable(parameter_exp.wordSymbol.word,derefValue(evalCode.statement(assign,context)));
+						let assignValue:Value = derefValue(evalCode.statement(assign,context));
+						let name:Name = parameter_exp.wordSymbol.word;
+						if(isDeclaration)return context.namespace.declareVariable(name,assignValue);
+						else return context.namespace.assignVariable(name,assignValue);
 					}],
 					[SyntaxTree.type.bracket,()=>{//''
-						todo("destructure support; ")
+						todo.silent("destructure support; ")
 					}],
 					[SyntaxTree.type.operator,()=>
-						parameter_exp.wordSymbol.throwError("syntax",`in declaration pattern: expected name, found operator '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
+						parameter_exp.wordSymbol.throwError("syntax",`in ${["assignment","declaration"][!!isDeclaration]} pattern: expected name, found operator '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
 					],
 				]);
 			},
@@ -1834,7 +1908,7 @@ const fs = Deno;//require("fs");
 			}
 			function try_getPropertyValueRef(parent:Value,name_value:Value,errorWordSymbol?:WordSymbol):Value{//returns dereferenced value
 				let data = try_getPropertyData(parent,derefValue(name_value),errorWordSymbol);
-				return ValueRef.new(data);
+				return PropertyRef.new(data);
 			}
 			function try_getPropertyValue(parent:Value,name_value:Value,errorWordSymbol?:WordSymbol):Value{//returns dereferenced value
 				let data = try_getPropertyData(parent,derefValue(name_value),errorWordSymbol);
@@ -1866,10 +1940,10 @@ const fs = Deno;//require("fs");
 			}
 		//----
 		function derefValue(value:Value){
-			if(value instanceof ValueRef)return value.deref();
+			if(value instanceof PropertyRef)return value.deref();
 			return value;
 		}
-		return derefValue(evalCode.forEach_exps(rootPattern,new Context));
+		return evalCode.forEach_exps(rootPattern,new Context);
 	}
 //----
 	//for each in tree
@@ -1920,7 +1994,7 @@ function printTree(abstractSyntaxTree):String{//a TEST function for debugging
 		const i = indent;
 		const a = exp;
 		len++;
-		if(!isFunctionCall && "([{".includes(a.wordSymbol)&&a.args[0]){
+		if(!isFunctionCall && "([{".includes(a?.wordSymbol)&&a?.args?.[0]){
 			return "\t".repeat(i)+"[[function call]]"+"\n"
 				+forEach(a.args[0],i+1,a,true)
 				+"\n"
@@ -1950,7 +2024,7 @@ function compile(text,throwError,fileName="main file"){
 		parseAST(abstractSyntaxTree);//:mutates rootPattern
 		let value = runAST(abstractSyntaxTree);
 		//assert(abstractSyntaxTree == rootPattern);
-		//console.error(printTree(abstractSyntaxTree));
+		console.error(printTree(abstractSyntaxTree));
 		console.error(value);
 		return value;
 	}
@@ -1967,5 +2041,5 @@ let {data:a,fileName} = (()=>{
 	return {fileName,data};
 })();
 //a="a.b := 2;Coords := \(*$$:;#x:=0;#y:=0);";
-if(1)compile(`obj:[1;2;b:3];obj.b*2+1`);
+if(1)compile(`(1<2<3<4<=5; 2£{a=3}+4; 2*£3 2;[;;])`);
 else try{compile(a)}catch(e){console.error(e)};

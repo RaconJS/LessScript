@@ -12,7 +12,7 @@
 	\foo#bar#baz: exp;
 //idea: arrays are like objects but all properties are indexed in arrays
 	assert [11;22;a:33][2] == 33;
-	assert [11;22;a:33].2 == 2;//can use rust-like tuple indexing aswell
+	assert [11;22;a:33].2 == 33;//can use rust-like tuple indexing aswell
 //idea: references: use `&(a) = v` for referencing values allowing them to be assignable
 	obj:(a:2);
 	assert obj.a == 2;
@@ -376,7 +376,7 @@ mod signal_polyfill : {
 	obj:(
 		$FooSymbol:(name:"foo");
 		$BarSymbol:(name:"bar");
-	);
+	);&
 	assert obj.$* == [FooSymbol;BarSymbol];
 	assert !obj.name;
 	obj:(
