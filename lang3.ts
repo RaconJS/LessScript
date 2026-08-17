@@ -142,7 +142,7 @@ const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u..
 		if(defaultCase)return defaultCase(flags,setOfCases);
 		else throw Error("compiler error: unhandled flag: '"+unhandledFlags[0]?.toString()+"'");
 	}
-	function EnumSymbols(...list:String[]):{Symbol}{
+	function EnumSymbols(...list:String[]):{[Item<list>]:Symbol}{
 		return Object.freeze(list.reduce((s,v)=>[s,s[v]=Symbol(v)][0],{}));
 	}
 	type Option<T> = T|null;
@@ -1246,6 +1246,10 @@ const fs = Deno;//require("fs");
 									}
 								}
 								else{
+									if(exp.wordSymbol.word == "#" && !(//allows `#+b`--> `{#} + {b}` instead of `#{+b}` 
+										exps[i+1].wordSymbol.type == SyntaxTree.type.label||
+										["$","$$"].includes(exps[i+1].wordSymbol.word)
+									))continue;
 									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
 									const argExp = tryGetNewAddableArg();
 									exp.args[1] = argExp;
@@ -1477,16 +1481,17 @@ const fs = Deno;//require("fs");
 				//where: array[index] : Valid
 			type Value =
 				PropertyRef<false>|
-				Value_Storable
+				Value_Returnable
 			;
 			type Value_Assignable = 
 				PropertyRef<false>|
-				Value_Storable
+				Value_Returnable
 			;
-			type Value_Storable =
+			type Value_Returnable =
 				PropertyRef<true>|
 				Value_Derefed
 			;
+			type Value_Storable = Value_Derefed;
 			type Value_Derefed = 
 				ObjectValue|
 				Name|
@@ -1528,7 +1533,17 @@ const fs = Deno;//require("fs");
 				deref(){return this.isStorable?this:this.get();}
 				derefFully(){return derefValueFully(this.get());}//ignores storable PropertyRefs
 			}
-			class Value{}
+			class ValueRef{//value wrapper
+				constructor(data={}){Object.assign(this,data);assert(!(this.value instanceof PropertyParentPair),)}
+				value:Value_Storable;
+				deref(){return this.value;}
+				derefFully(){return derefValueFully(this.value);}//ignores storable PropertyRefs
+				get(){return this.value;}
+				set(value:Value_Storable){
+					assert(!(value instanceof PropertyParentPair),"use derefValueFully ; `ValueRef.set(derefValueFully(value))`");
+					return this.value = value;
+				}
+			}
 			class FunctionObj{
 				constructor(data={}){Object.assign(this,data);}
 				toTree(){return this.exp.toTree();}
@@ -1543,20 +1558,27 @@ const fs = Deno;//require("fs");
 				context:Context;
 				exp:Expression<"\\">;
 			}
+			class ParameterData{
+
+			}
 			class Context{
 				static ContextType = EnumSymbols("default","if","match","case");
-				static ParameterSymbols = EnumSymbols("#@","#?","#!","##","#/","#\\");
+				static ParameterSymbol = EnumSymbols("#@","#?","#!","##","#/","#\\");
 				namespace:Namespace = new Namespace();
 				module:&Module;
 				contextType:ContextType = Context.ContextType.default;
-				arguments:Map<ParameterSymbols,Value[]|Value> = {};
-				functionParameters?:(PropertyParentPair&LinkedList)[];
+				arguments:Map<ParameterSymbol,Value[]> = {};
+				functionInstance?:&Namespace;//points to the function instance; used for decaring `#name`
 				constructor(data={}){Object.assign(this,data)}
 				new_child(data={}){
 					return new Context({...this,...data});
 				}
 				new_child_namespace(data={},namespaceData={}){
 					return new Context({...this,namespace:new Namespace({parent:this.namespace,...namespaceData}),...data});
+				}
+				set_parameterSymbols(symbols:{[ParameterSymbol]:Value}){
+					Object.assign(this.arguments,symbols);
+					return this;
 				}
 				clone(){
 					new Context(this);
@@ -1616,7 +1638,8 @@ const fs = Deno;//require("fs");
 		const AllPrivateSymbols = Symbol("a.$*");
 		const AllSymbols = Symbol("a.*");
 		const NullSymbol = Symbol("$null");
-		const compilerOnlySymbols = [isSearched];//symbols that can both be {added to variables} and {that should not be accessable by the language user}
+		const ObjectAsSymbol = Symbol("$obj");
+		const compilerOnlySymbols = [isSearched,ObjectAsSymbol];//symbols that can both be {added to variables} and {that should not be accessable by the language user}
 		const evalCode = {
 			forEach_exps(exps:Expression[],context:Context,forEachFunction?:(value)=>void):Option<Value>{//`...` in `{...}`
 				let lastValue;
@@ -1732,6 +1755,7 @@ const fs = Deno;//require("fs");
 								}
 								return value;
 							}],
+							[["$$","$"],()=>evalCode.getName(exp)],
 							["$$",()=>Symbol("unique `$$`")],
 							["$",()=>{
 								let value = evalCode.statement(exp.args[1],context);
@@ -1761,8 +1785,21 @@ const fs = Deno;//require("fs");
 							[word=>word == "&" && Expression.AfixType.prefix.includes(exp.afix),()=>{//'&a' linked property similar to the C code `&int a = &b`
 								let value:Value = evalCode.statement(exp.args[0]??exp.args[1],context);
 								todo.silent("handle `&a` references properly");
+								value = ValueRef({value:derefValue});
 								return value;//BODGED
 							}],
+							...[//parameters
+								[["##","#"],//for both functions and class
+									()=>{
+										let value = (context.arguments[Context.ParameterSymbol["##"]]??[]).shift()??null
+										if(exp.args[1]){
+											let name:Name = evalCode.getName(exp.args[1]);
+											context.functionInstance.declareVariable(name,value);
+										}
+										return value;
+									}
+								]
+							],
 							...[//numeric and logical operators:
 								[
 									word=>exp.afix == Expression.AfixType.infix &&
@@ -1838,7 +1875,7 @@ const fs = Deno;//require("fs");
 			destructureObject(parameter_exp:Expression,argument_exp?:Expression,context):Object&Map<Name,Option<Value>>{
 				return destructureObject_internal(parameter_exp,argument_exp,context);
 			},
-			destructureFunction(parameter_exps:Expression[],argument_exps:Value[]|ObjectValue,context):Map<Name,Option<Value>>{
+			destructureFunction(parameter_exps:Expression[],argument_exps:Value[]|ObjectValue,context):{parameters:Object&Map<Name,Option<Value>>,nextIndex:Index<argument_exps>}{
 				let parameters:Map<Name,Option<Value>> = {};
 				let i = 0;
 				for(let parameter_exp of parameter_exps){
@@ -1851,7 +1888,7 @@ const fs = Deno;//require("fs");
 					void evalCode.destructureObject_internal(parameter_exp,argument,context,parameters);
 					if(!isPublicParameter)i++;
 				}
-				return parameters;
+				return {parameters,nextIndex:i};
 			},
 			destructureObject_internal(parameter_exp:Expression,argument?:Value,context,currentParametersMap?:Map=undefined):Object&Map<Name,Option<Value>>{//this function is only used by the other destructure functions
 				let parameters:Map<Name,Option<Value>> = currentParametersMap??{};
@@ -1897,6 +1934,23 @@ const fs = Deno;//require("fs");
 					],
 				]);
 			},
+			getName(name_exp:Expression<SyntaxTree.type.Label|"$"|"$$">):Name{
+				if(name_exp.wordSymbol.type == SyntaxTree.type.Label)return name_exp.wordSymbol.word;
+				if(name_exp.wordSymbol.word == "$$")return Symbol("unique `$$`");
+				assert(name_exp.wordSymbol.word == "$",name_exp)
+				let value = evalCode.statement(exp.args[1],context);
+				let name:Name = value instanceof PropertyRef?value.name:undefined;
+				value = derefValueFully(value);
+				return match(value,[
+					[null,()=>NullSymbol],
+					[()=>
+						value instanceof ObjectValue||
+						value instanceof PropertyRef||
+						!!value && typeof value == Object,
+						()=>object[ObjectAsSymbol]??=Symbol(name??object instanceof Array?"[...]":"{...}")
+					],
+				],value);
+			}
 		};
 		function functionCall(foo:Value|PropertyRef,args:ObjectValue|Value[],self):Value{
 			assert(//args:ObjectValue|Value[]
@@ -1911,8 +1965,19 @@ const fs = Deno;//require("fs");
 					foo(...argsArray)
 				}],
 				[_=>foo instanceof FunctionObj, ()=>{
-					let parameters = evalCode.destructureFunction(foo.exp.args[0]?.args??[],args);
-					let innerContext = foo.context.new_child_namespace({functionParameters:parameters},{variables:parameters});
+					let {parameters,nextIndex} = evalCode.destructureFunction(foo.exp.args[0]?.args??[],args);
+					let extraArguments = try_toArray(args).slice(nextIndex-1);
+					assume(args instanceof ObjectValue || args instanceof Array);{
+						assert(extraArguments instanceof Array);
+					};
+					let innerContext = foo.context.new_child_namespace(
+						{},
+						{variables:parameters},
+					).set_parameterSymbols({
+						[Context.ParameterSymbol["#\\"]]:foo,
+						[Context.ParameterSymbol["##"]]:extraArguments,
+					});//assume: foo is NOT a class
+					innerContext.functionInstance = innerContext.namespace;
 					let value = evalCode.statement(foo.exp.args[1],innerContext);
 					return derefValue(value);
 				}],
@@ -2011,11 +2076,11 @@ const fs = Deno;//require("fs");
 				if(value instanceof Object)return value;
 				return null;
 			}
-			function getAsProperties(object?:Object):[key:Name,value][]{
+			function getAsProperties(object?:Object):[key:Name,value:Value][]{
 				if(!object)return [];
 				return Object.keys(object).map(key=>[key,object[key]]);
 			}
-			function getAsPropertiesSymbols(object?:Object):[key:Name,value][]{
+			function getAsPropertiesSymbols(object?:Object):[key:Name,value:Value][]{
 				if(!object)return [];
 				assert(!(isSearched in object))
 				return Object.getOwnPropertySymbols(object)
@@ -2028,11 +2093,11 @@ const fs = Deno;//require("fs");
 			}
 		//----
 		//reference:
-			function derefValue(value:Value|PropertyRef):Value&Value_Storable{
+			function derefValue(value:Value|PropertyRef):Value_Returnable{
 				if(value instanceof PropertyRef)return value.deref();
 				return value;
 			}
-			function derefValueFully(value:Value|PropertyRef):Value&Value_Derefed{//for when 
+			function derefValueFully(value:Value|PropertyRef):Value_Storable{//for when 
 				if(value instanceof PropertyRef)return value.derefFully();
 				return value;
 			}
