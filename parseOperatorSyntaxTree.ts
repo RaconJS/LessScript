@@ -90,7 +90,7 @@ export function parseIntoOperatorSyntaxTree_function(
 					"!!!"     :{afix:OperatorData.AfixType.nofix},
 					"$$"      :{afix:OperatorData.AfixType.nofix},
 					"$"       :{afix:OperatorData.AfixType.nofix},
-					"#"       :{afix:OperatorData.AfixType.nofix},
+					"#"       :{afix:OperatorData.AfixType.nofix,useIfNextWordCanHaveLeftArgument:true},
 					"##"      :{afix:OperatorData.AfixType.nofix},
 					"#@"      :{afix:OperatorData.AfixType.nofix},
 					"#?"      :{afix:OperatorData.AfixType.nofix},
@@ -104,7 +104,7 @@ export function parseIntoOperatorSyntaxTree_function(
 				},
 				{//consumes a key_exp
 					"$"       :{afix:OperatorData.AfixType.prefix},
-					"#"       :{afix:OperatorData.AfixType.prefix},
+					"#"       :{afix:OperatorData.AfixType.prefix,optionalArg:[0,1]},
 					"#@"      :{afix:OperatorData.AfixType.prefix},
 					"#?"      :{afix:OperatorData.AfixType.prefix},
 					"#!"      :{afix:OperatorData.AfixType.prefix},
@@ -489,7 +489,10 @@ export function parseIntoOperatorSyntaxTree_function(
 									!hasArg(words[i+1]) ||
 									words[i+1]?.type == SyntaxTree.type.operator &&
 									(//if words[i+1]'s left argument cannot be removed
-										!(operatorProceedence[words[i+1]].prefix||operatorProceedence[words[i+1]].nofix) &&
+										possibleAfixes.nofix?.useIfNextWordCanHaveLeftArgument && (
+											operatorProceedence[words[i+1]].postfix || operatorProceedence[words[i+1]].infix
+										)
+										|| !operatorProceedence[words[i+1]].prefix && !operatorProceedence[words[i+1]].nofix &&
 										operatorProceedence[words[i+1]].infix//assert: words[i+1] must have left arg afix other than infix so we cannot
 										//ignores the nofix case here, nofix is userally for `(*)`
 
@@ -499,6 +502,7 @@ export function parseIntoOperatorSyntaxTree_function(
 								){
 									possibleAfix &= ~SyntaxTree.AfixType.operatorWithRightArg;//note: preceedence doesn't matter for removing right arg here since a syntax error would be thrown if it's wrong either way
 								}
+									
 								operatorData = afixIntoOperatorData(possibleAfixes,possibleAfix);//:OperatorData?
 								{//special cases ; afix is not obvious works out which one to choose
 									if(!operatorData){//assign afix based on afix priority
@@ -515,6 +519,7 @@ export function parseIntoOperatorSyntaxTree_function(
 												
 										;
 									}
+										
 									if(!operatorData){//handle optional arguments
 										//assume: only one operator from has optional arguments
 										operatorData =
@@ -749,9 +754,10 @@ export function parseIntoOperatorSyntaxTree_function(
 												return;
 											}
 											if(
-												selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration
-												|| j == 1 && selfExp.afix == Expression.AfixType.prefix//allow for '1+if a => 0'
+												selfExp.wordSymbol.subtype == SyntaxTree.subtype.declaration//TODO
+												|| (j == 1 && selfExp.afix == Expression.AfixType.prefix)//allow for '1+if a => 0'
 											){//does both arguments of ':' before the '=' to allow 'a:T=b' --> '(a:T)=b' and prevent 'a:(T=b)'
+												if(!selfExp.operatorData.prefixIgnorePreceedence)todo.silent("TODO:check if statement condition logic. test: may need to add `&&selfExp.operatorData.prefixIgnorePreceedence` to fix syntaxtree bugs ")
 												collectIntoTree(i+1,selfExp.operatorData.proceedence[1],exps,false,isParameter);//:mutates owner object of item argExp
 												argExp = exps[i + argIndex];//update
 											}
