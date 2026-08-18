@@ -498,12 +498,13 @@ const fs = Deno;//require("fs");
 					let isRegex = wordSymbol.subtype2 == SyntaxTree.subtype2.regex;
 					let string = wordSymbol.word.match(/^r?(?:r#+)?"([\s\S]*)"#*/)[1]
 						.replace(/^\n/,"")
-						.replaceAll(/(?:\n|^)\t*/g,v=>"\n"+v.substr(wordSymbol.indent+1))
+						.replace(/\n\t*$/,"")
+						.replaceAll(/(\n|^)(\t+)/g,(_,m1,m2)=>m1+m2.substr(wordSymbol.indent+1))
 						.replaceAll("\n","\\n")
 						.replaceAll("\t","\\t")
 					;
 					if(isExtraLiteralString||isRegex){
-						string = string.replaceAll("\\","\\\\");
+						string = string.replaceAll(/\\(?![nt])/g,"\\\\");
 					}
 					string = "\"" + string + "\"";
 					try{
