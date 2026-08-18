@@ -412,8 +412,8 @@ const fs = Deno;//require("fs");
 									word.match(/^¬$/) ? {type:SyntaxTree.type.operator} ://'¬'
 									word.match(/^\?!?$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.return} ://
 									word.match(/^£$/) ? {type:SyntaxTree.type.operator}://void operator
-									word.match(/^(?:\.|#\.)$/) ? {type:SyntaxTree.type.operator,subtype2:SyntaxTree.subtype2.dot} ://dot operator 
-									word.match(/^(?:#\.)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.autoParameter,subtype2:SyntaxTree.subtype2.dot} ://dot operator 
+									word.match(/^\.$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.autoParameter,subtype2:SyntaxTree.subtype2.dot} ://dot operator 
+									word.match(/^#\.$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.autoParameter,subtype2:SyntaxTree.subtype2.dot} ://dot operator 
 									word.match(/^\.\.=?$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.interval} ://interval '1..3'
 									word.match(/^(?:ref)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^@$/) ? {type:SyntaxTree.type.operator} :
@@ -421,7 +421,7 @@ const fs = Deno;//require("fs");
 									word.match(/^(?:\$\$)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:\.\.\*)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^`$/) ? {type:SyntaxTree.type.operator}:
-									word.match(/^#(?:\.\.|[#@!?/\\])?$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.nofix} ://'#' or '##' or '#@' in: '#name' '##'
+									word.match(/^#(?:\.\.|[#@!?/\\])?$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.autoParameter,afix:SyntaxTree.AfixType.nofix} ://'#' or '##' or '#@' in: '#name' '##'
 									word.match(/^\$$/) ? {type:SyntaxTree.type.operator} ://'$type' '$key'
 									word.match(/^[$@*]\*$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.prefix}://'@*' in '@* = (a=1,b=2,c=3)'
 									word.match(/^\.\.\.$/) ? {type:SyntaxTree.type.operator} :
@@ -631,15 +631,20 @@ const fs = Deno;//require("fs");
 							let parentExp = match(exp.wordSymbol.word,[
 								[["#@"],_=>exp.paramRef = context?.statements?.pop()],
 								[["#","##"],_=>{
-									exp.autoParameterIndex = context.function.autoParameterIndex++
-									return exp.paramRef = context.functionExp;
+									exp.autoParameterIndex = context.function.autoParameterIndex++;
+									return exp.paramRef = context.function.functionExp;
 								}],
 								[["#?","#!","#.","#/","#\\","#.."],_=>{
 									exp.paramRef = context.parameters[exp.wordSymbol.word]?.pop();
 									return exp.paramRef;
 								}],
 							]);
-							if(!exp.paramRef)exp.wordSymbol.throwError("syntax","missing statement for parameter",e=>Error(e))
+							if(!exp.paramRef){
+								if(["#","##"].includes(exp.wordSymbol.word))
+									exp.wordSymbol.throwError("syntax","missing function for parameter",e=>Error(e));
+								else
+									exp.wordSymbol.throwError("syntax","missing statement for parameter",e=>Error(e));
+							}
 						}
 						function addStatementParameter(parameterName,numOfParameters = 1){
 							let newParmaters = {...(context.parameters??{})};
@@ -649,6 +654,12 @@ const fs = Deno;//require("fs");
 							}
 							else{
 								newParmaters[parameterName] = exp;
+								if(parameterName == "#\\"){
+									newContext.function = {
+										autoParameterIndex:0,
+										functionExp:exp
+									};
+								}
 							}
 							forEachExp(exp.args,newContext,paramPath);
 						}
@@ -657,8 +668,7 @@ const fs = Deno;//require("fs");
 							[["if", "else"],()=>addStatementParameter("#?")],
 							["for",()=>addStatementParameter("#@")],
 							["if",()=>addStatementParameter("#?")],
-						],()=>{pass()})
-						forEachExp(exp.args,context,paramPath);
+						],()=>{forEachExp(exp.args,context,paramPath);})
 					}],
 					[[SyntaxTree.type.sepparator],()=>assert.impossible("is removed by AST generator")],
 				])
@@ -686,15 +696,17 @@ const fs = Deno;//require("fs");
 			type Index<array> = Number&Int;//index on object `array`
 				//where: array[index] : Valid
 			type Value =
-				PropertyRef<false>|
+				PropertyRef|
+				ValueWrapper|
 				Value_Returnable
 			;
 			type Value_Assignable = 
-				PropertyRef<false>|
+				PropertyRef|
+				ValueWrapper|
 				Value_Returnable
 			;
 			type Value_Returnable =
-				PropertyRef<true>|
+				PropertyRef<isStorable<true>>|
 				Value_Derefed
 			;
 			type Value_Storable = Value_Derefed;
@@ -714,7 +726,7 @@ const fs = Deno;//require("fs");
 				null
 			);
 			const isSearched = Symbol();
-			class PropertyParentPair{
+			class PropertyParentPair{//internal class, cannot be returned by an expression
 				constructor(data={}){Object.assign(this,data);}
 				parent:Object|Array;
 				name:Name|Index;
@@ -755,6 +767,14 @@ const fs = Deno;//require("fs");
 					;
 				}
 			}
+			class ValueWrapper{//for passing extra data between statements
+				constructor(data={}){Object.assign(this,data);}
+				value:Value;
+				statementReturnValue?:{value:Value};//e.g. `a` in `if a=>a else 0` ; used by statements like 'if'/'else' to pass data between them; stores the return value of a statement
+				unwrap(){return unwrapValue(this.value);}
+				deref(){return derefValue(this.value);}
+				derefFully(){return derefValueFully(this.value);}//ignores storable PropertyRefs
+			}
 			class FunctionObj{
 				constructor(data={}){Object.assign(this,data);}
 				toTree(){return this.exp.toTree();}
@@ -780,7 +800,6 @@ const fs = Deno;//require("fs");
 				contextType:ContextType = Context.ContextType.default;
 				arguments:Map<ParameterSymbol,Value[]> = {};
 				functionInstance?:&Namespace;//points to the function instance; used for decaring `#name`
-				statementBool?:Value&(Truthy|Falsy);//used by 'if'/'else' to pass data; stores the return value of an if statement
 				constructor(data={}){Object.assign(this,data)}
 				new_child(data={}){
 					return new Context({...this,...data});
@@ -990,6 +1009,7 @@ const fs = Deno;//require("fs");
 									[()=>
 										value instanceof ObjectValue||
 										value instanceof PropertyRef||
+										value instanceof ValueWrapper||
 										!!value && typeof value == Object,
 										()=>object[ObjectAsSymbol]??=Symbol(name??object instanceof Array?"[...]":"{...}")
 									],
@@ -1097,17 +1117,21 @@ const fs = Deno;//require("fs");
 									let argument = derefValue(evalCode.statement(arrowExp.args[0],context));
 									innerContext.add_parameterSymbols({"#?":[argument]});
 									let value = argument?evalCode.statement(arrowExp.args[1],context):null;
-									context.statementBool = argument;
+									value = new ValueWrapper({value,statementReturnValue:{value:argument}})
 									return value;
 								}],
 								["else",()=>{
-									let value = evalCode.statement(exp.args[0],context);
-									let statementBool = context.statementBool;
-									context.statementBool = undefined;
-									if(!statementBool){
-										value = evalCode.statement(exp.args[1],context);
+									let value = evalCode.statement(exp.args[0],context);//from if statement
+									if(!(value instanceof ValueWrapper) || !value.statementReturnValue)
+										exp.wordSymbol.throwError("syntax","missing if statement",e=>Error(e))
+									let statementReturnValue = value.statementReturnValue;
+									loga("??",statementReturnValue)
+									if(statementReturnValue.value){
+										return value;
 									}
-									return value;
+									else {//else
+										return evalCode.statement(exp.args[1],context);
+									}
 								}],
 								["assert",()=>{
 									let value = derefValue(evalCode.statement(exp.args[1],context));
@@ -1167,7 +1191,7 @@ const fs = Deno;//require("fs");
 						parameter_exp.wordSymbol.throwError("syntax",`in ${["assignment", "declaration"][!!isDeclaration]} pattern: expected name, found value '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
 					}],
 					[SyntaxTree.type.label,()=>{//`a:b`
-						let assignValue:Value = derefValue(evalCode.statement(assign,context));
+						let assignValue:Value_Returnable = derefValue(evalCode.statement(assign,context));
 						let name:Name = parameter_exp.wordSymbol.word;
 						if(isDeclaration)return context.namespace.declareVariable(name,assignValue);
 						else return context.namespace.assignVariable(name,assignValue);
@@ -1353,10 +1377,16 @@ const fs = Deno;//require("fs");
 		//reference:
 			function derefValue(value:Value|PropertyRef):Value_Returnable{
 				if(value instanceof PropertyRef)return value.deref();
+				if(value instanceof ValueWrapper)return value.deref();
+				return value;
+			}
+			function unwrapValue(value:Value|ValueWrapper):Value_Returnable{
+				if(value instanceof ValueWrapper)return value.unwrap();
 				return value;
 			}
 			function derefValueFully(value:Value|PropertyRef):Value_Storable{//for when 
 				if(value instanceof PropertyRef)return value.derefFully();
+				if(value instanceof ValueWrapper)return value.deref();
 				return value;
 			}
 		//----
