@@ -1053,7 +1053,7 @@ const fs = Deno;//require("fs");
 							...[//numeric and logical operators:
 								[
 									word=>exp.afix == Expression.AfixType.infix &&
-									word.match(/[+\-*%&|^\/]|>{1,3}|<{1,2}/),
+									word.match(/[+\-*%&|^\/]|>{2,3}|<{2}/),
 									()=>numericOperator(
 										new Function("x,y",`return x ${exp.wordSymbol.word} y`)
 									)
@@ -1074,18 +1074,32 @@ const fs = Deno;//require("fs");
 									word=>exp.afix == Expression.AfixType.infix &&
 									word.match(/[<>]=?|[!=]==?/),
 									()=>{
-										function handleComparisonChain(exp){
+										function equality(x:Value,y:Value){
+											if(x == y)return true;
+											if(!(x instanceof Object && y instanceof Object))return false;
+											if(x instanceof ObjectValue && y instanceof ObjectValue){//BODGED
+												return equality(x.array,y.array) && equality(x.variables,y.variables);
+											}
+											todo();
+											return Object.keys({...x,...y}).forEach(key=>x[key] == y[key])
+										};
+										function handleComparisonChain(exp):{value:Value&bool,args:Value[2]}{
 											if(exp.afix == Expression.AfixType.infix && exp.wordSymbol.word.match(/[<>]=?|[!=]==?/)){
-												const foo = new Function("x,y",`return x ${exp.wordSymbol.word} y`);
-												return foo(
-													derefValue(handleComparisonChain(exp.args[0])),
-													derefValue(handleComparisonChain(exp.args[1])),
-												);
+												const foo:(x,y)=>bool = exp.wordSymbol.word == "=="?equality:
+													new Function("x,y",`return x ${exp.wordSymbol.word} y`)
+												;
+												let args:Value_Returnable[] = [
+													derefValue(handleComparisonChain(exp.args[0])).args[1],
+													derefValue(handleComparisonChain(exp.args[1])).args[0],
+												];
+												loga(`${args[0]} ${exp.wordSymbol.word} ${args[1]}`)
+												return {value:foo(args[0],args[1]),args};
 											}else{
-												return evalCode.statement(exp,context);
+												let arg = evalCode.statement(exp,context);
+												return {value:undefined,args:[arg,arg]};
 											}
 										}
-										return handleComparisonChain(exp);
+										return handleComparisonChain(exp).value;
 									},
 								],
 								[
@@ -1472,7 +1486,7 @@ function compile(text,throwError,fileName="main file"){
 		parseAST(abstractSyntaxTree);//:mutates rootPattern
 		let value = runAST(abstractSyntaxTree);
 		//assert(abstractSyntaxTree == rootPattern);
-		console.error(printTree(abstractSyntaxTree));
+		//console.error(printTree(abstractSyntaxTree));
 		console.error(value);
 		return value;
 	}
