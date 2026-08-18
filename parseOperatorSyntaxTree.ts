@@ -118,8 +118,6 @@ export function parseIntoOperatorSyntaxTree_function(
 					"?."      :{afix:OperatorData.AfixType.infix,optionalArg:[1,0]},//same as in javascript's `option?.property`
 				},
 				{
-				},
-				{
 					"("       :{afix:OperatorData.AfixType.postfix},
 					"["       :{afix:OperatorData.AfixType.postfix},
 					"{"       :{afix:OperatorData.AfixType.postfix},
@@ -251,6 +249,7 @@ export function parseIntoOperatorSyntaxTree_function(
 				},
 				{
 					"=>"      :{afix:OperatorData.AfixType.infix,optionalArg:[1,0]},
+					"if"      :{afix:OperatorData.AfixType.prefix,includes:["=>"]},
 				},
 				{
 					"="       :{afix:OperatorData.AfixType.infix,isInverseBracketing:true},//'a=(b=c)' instead of '(a=b)=c'
@@ -258,7 +257,6 @@ export function parseIntoOperatorSyntaxTree_function(
 					"\\"      :{afix:OperatorData.AfixType.prefix,optionalArg:[0,1]},//function
 					"/"       :{afix:OperatorData.AfixType.prefix,optionalArg:[0,1]},//class
 					"`"       :{afix:OperatorData.AfixType.prefix},
-					"if"      :{afix:OperatorData.AfixType.prefix,includes:["=>"]},
 					"else"    :{afix:OperatorData.AfixType.infix},//'if' else, 'if', 'while', 'match', 'for'
 					"match"   :{afix:OperatorData.AfixType.prefix},
 					"do"      :{afix:OperatorData.AfixType.infix,includes:["while"]},//'while _ => _' or '_ do _ while _ => _'

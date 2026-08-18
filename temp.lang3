@@ -1,1 +1,7 @@
-#+0
+[
+	if 0 => "if"
+	else "else";
+	
+	if 43 => "if"
+	else "else" ;
+]
