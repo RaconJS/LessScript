@@ -301,8 +301,8 @@ export function parseIntoOperatorSyntaxTree_function(
 		toString(){return this.wordSymbol.word}
 		toTree():Tree<Expression>[]{return this.contence??this.args??[]}
 		//wordSymbol;//:WordSymbol?
-		possibleAfix = 0b11;//:Expression.afix
-		afix;//:Expression.afix
+		possibleAfix:Expression.AfixType&u2 = 0b11;
+		afix:Expression.AfixType&u2;
 		isReverseOrder;//`£` in `a + £x b` ; evaluates the 2nd argument first but still returns the 1st argument
 		static defaultProceedence = 0;
 		static AfixType = SyntaxTree.AfixType;

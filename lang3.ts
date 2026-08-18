@@ -712,10 +712,12 @@ const fs = Deno;//require("fs");
 			type Value_Assignable = 
 				PropertyRef|
 				ValueWrapper|
+				ValueRef|
 				Value_Returnable
 			;
 			type Value_Returnable =
-				PropertyRef<isStorable<true>>|
+				PropertyRef<isReturnable<true>>|
+				ValueRef|
 				Value_Derefed
 			;
 			type Value_Storable = Value_Derefed;
@@ -725,7 +727,7 @@ const fs = Deno;//require("fs");
 				Index|
 				JavascriptValue
 			;
-			type PropertyRef<isStorable=true|false> = PropertyRef & {isStorable};
+			type PropertyRef<isReturnable=true|false> = PropertyRef & {isReturnable};
 			type Value_Javascript = Any & (
 				Number|
 				String|
@@ -747,29 +749,37 @@ const fs = Deno;//require("fs");
 					return this.value;
 				}
 				set(value):Value&consumes<this>{//: this:Invalid
-					this.parent[this.name] = value;
+					if(this.parent[this.name] instanceof ValueRef && !(value instanceof ValueRef)){//allows for linked variables
+						this.parent[this.name].set(value);
+					}
+					else this.parent[this.name] = value;
 					return value;
 				}
 			}
 			class PropertyRef extends PropertyParentPair{//:Value ; used in expressions
 				constructor(data={}){super();Object.assign(this,data);}
-				isStorable:bool = false;
+				isReturnable:bool = false;//`foo() = exp` ; allows returning assignable properties through functions 
 				static new(data:Option<PropertyParentPair>):Option<PropertyRef>{
 					return data && new PropertyRef(data);
 				}
-				deref(){return this.isStorable?this:this.get();}
+				deref(){return this.isReturnable?this:this.get();}
 				derefFully(){return derefValueFully(this.get());}//ignores storable PropertyRefs
 			}
 			class ValueRef{//value wrapper ; similar to PropertyRef but for shared variables
 				constructor(data={}){Object.assign(this,data);assert(!(this.value instanceof PropertyParentPair),)}
 				value:Value_Storable;
-				deref(){return this.value;}
-				derefFully(){return derefValueFully(this.value);}//ignores storable PropertyRefs
-				fromValue(value:Value|ValueRef):ValueRef{
+				static fromValue(value:Value|ValueRef):ValueRef{
+					value = derefValue(value);
+					if(value instanceof PropertyRef)value = value.value;//BODGED: use a function for (Value)->Value_Derefed|ValueRef
+					//assert value:Value_Derefed | ValueRef
 					return value instanceof ValueRef?value:
-						ValueRef({value:derefValueFully(value)})
+						new ValueRef({value:derefValue(value)})
 					;
 				}
+				deref(){return this;}
+				derefFully(){return derefValueFully(this.value);}//ignores storable PropertyRefs
+				get(){return this.value}
+				set(value){return this.value = value}
 			}
 			class ValueWrapper{//for passing extra data between statements
 				constructor(data={}){Object.assign(this,data);}
@@ -1025,17 +1035,18 @@ const fs = Deno;//require("fs");
 								const values = evaluationOrder.map(arg_exp=>evalCode.statement(arg_exp,context));
 								return isReverseOrder?values[1]:values[0];
 							}],
-							[word=>word == "&" && Expression.AfixType.postfix.includes(exp.afix),()=>{//'a&' reference
+							[word=>word == "&" && exp.afix == Expression.AfixType.postfix,()=>{//'a&' reference
 								let value:Value = evalCode.statement(exp.args[0]??exp.args[1],context);
-								if(value instanceof PropertyRef)value.isStorable = true;
+								if(value instanceof PropertyRef)value.isReturnable = true;
 								return value;//BODGED
 							}],
-							[word=>word == "&" && Expression.AfixType.prefix.includes(exp.afix),()=>{//'&a' linked property similar to the C code `&int a = &b`
+							[word=>word == "&" && exp.afix == Expression.AfixType.prefix,()=>{//'&a' linked property similar to the C code `&int a = &b`
 								let value:Value = evalCode.statement(exp.args[0]??exp.args[1],context);
 								todo.silent("handle `&a` references properly");
 								let valueRef = ValueRef.fromValue(value);
-								if(value instanceof PropertyRef){
-									value.set(valueRef); 
+								loga(valueRef)
+								if(value instanceof PropertyRef && value != valueRef){//turns variable into a reference if it was not already
+									value.set(valueRef);
 								}
 								return valueRef;//BODGED
 							}],
@@ -1274,7 +1285,7 @@ const fs = Deno;//require("fs");
 				],value);
 			}
 		};
-		function functionCall(foo:Value|PropertyRef,args:ObjectValue|Value[],self):Value{
+		function functionCall(foo:Value|PropertyRef,args:ObjectValue|Value[],self):Value&(Value_Assignable|Value_Returnable){
 			assert(//args:ObjectValue|Value[]
 				args instanceof ObjectValue || 
 				args instanceof Array && (!args[0] || args[0] instanceof ObjectValue)
@@ -1427,17 +1438,19 @@ const fs = Deno;//require("fs");
 			}
 		//----
 		//reference:
-			function derefValue(value:Value|PropertyRef):Value_Returnable{
-				if(value instanceof PropertyRef)return value.deref();
-				if(value instanceof ValueWrapper)return value.deref();
-				return value;
-			}
-			function unwrapValue(value:Value|ValueWrapper):Value_Returnable{
+			function unwrapValue(value:Value|ValueWrapper):Value_Returnable{//used at the end of statements
 				if(value instanceof ValueWrapper)return value.unwrap();
 				return value;
 			}
-			function derefValueFully(value:Value|PropertyRef):Value_Storable{//for when 
+			function derefValue(value:Value|PropertyRef):Value_Returnable{//returned by a function
+				if(value instanceof PropertyRef)return value.deref();
+				if(value instanceof ValueRef)return value.deref();
+				if(value instanceof ValueWrapper)return value.deref();
+				return value;
+			}
+			function derefValueFully(value:Value|PropertyRef):Value_Storable{//used in numeric operators (e.g. `a` in `a+b`) and function calls (e.g. `foo` in `foo()`)
 				if(value instanceof PropertyRef)return value.derefFully();
+				if(value instanceof ValueRef)return value.derefFully();
 				if(value instanceof ValueWrapper)return value.derefFully();
 				return value;
 			}
@@ -1523,7 +1536,7 @@ function compile(text,throwError,fileName="main file"){
 		parseAST(abstractSyntaxTree);//:mutates rootPattern
 		let value = runAST(abstractSyntaxTree);
 		//assert(abstractSyntaxTree == rootPattern);
-		console.error(printTree(abstractSyntaxTree));
+		//console.error(printTree(abstractSyntaxTree));
 		console.error(value);
 		return value;
 	}

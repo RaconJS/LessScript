@@ -1,2 +1,5 @@
 a:5;
-£assert {if a => {\#}(#?)} == 5
+b:&a;
+c:& &b;
+c=3;
+assert a == b == c == 3;
