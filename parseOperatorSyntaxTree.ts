@@ -605,7 +605,7 @@ export function parseIntoOperatorSyntaxTree_function(
 								selfExp.wordSymbol.subtype2 == SyntaxTree.subtype2.dot//'a.=b' '#.'
 								&& argExp.wordSymbol.type == SyntaxTree.type.label
 								&& argExp.wordSymbol.subtype == SyntaxTree.subtype.operator
-								&& !(exps[i+1].afix & Expression.AfixType.operatorWithLeftArg)
+								&& !(exps[i+1] && exps[i+1].afix & Expression.AfixType.operatorWithLeftArg)
 							){//'a.=b` == `a.=,b`
 								selfExp.args[2] = exps.splice(i+1,1)[0];
 							}

@@ -738,7 +738,8 @@ const fs = Deno;//require("fs");
 			);
 			const isSearched = Symbol();
 			class PropertyParentPair{//internal class, cannot be returned by an expression
-				constructor(data={}){Object.assign(this,data);}
+				constructor(data={}){Object.assign(this,data)}
+				parentValueObject?:ObjectValue;//owner of this.parent used for 'this' in function calls
 				parent:Object|Array;
 				name:Name|Index;
 				value:Option<Value>;//where: value == parent[name]
@@ -853,6 +854,24 @@ const fs = Deno;//require("fs");
 					return PropertyRef.new(try_getPropertyData(this,derefValue(name)));
 				}
 			}
+			const defualtFunctionsInternal = {
+				map(self:Array,mapFunc){
+					assert(self instanceof Array);
+					return self.map((v,i,a)=>functionCall(mapFunc,[v,i,a]))
+				},
+				reduce(self:Array,start,foo){
+					assert(self instanceof Array);
+					let innerFunction = arguments.length>2?foo:start;
+					let reduceFunction = (s,v,i,a)=>functionCall(innerFunction,[s,v,i,a]);
+					return self.reduce(
+						...([[reduceFunction],[reduceFunction,start]][+(arguments.length>2)])
+					);
+				},
+			};
+			const defaultFunctions_ValueObject = {
+				"="(){return defualtFunctionsInternal.map(this.array,...arguments)},
+				">"(){return defualtFunctionsInternal.reduce(this.array,...arguments)},
+			};
 			class Namespace{
 				constructor(data={}){Object.assign(this,data)}
 				parent?:Namespace&Tree<Namespace> = null;
@@ -889,7 +908,6 @@ const fs = Deno;//require("fs");
 			class Destruture{
 				constructor(data={}){Object.assign(this,data);}
 				parameterName:Name;//`a` in `(b:a):obj` or `(b:${exp}):obj`
-
 			}
 		//----
 		const AllPrivateSymbols = Symbol("a.$*");
@@ -959,10 +977,9 @@ const fs = Deno;//require("fs");
 								functionObj = evalCode.statement(exp.args[0],context);
 							}
 							let variable = new ObjectValue();
-							let namespaceObj = new Namespace({parent:context.namespace,variables:variable});
-							let innerContext = context.new_child({namespace:namespaceObj});
+							let innerContext = context.new_child_namespace({},{variables:variable});
 							const bracket_exp = exp;
-							void evalCode.forEach_exps(bracket_exp.contence,context,value=>{
+							void evalCode.forEach_exps(bracket_exp.contence,innerContext,value=>{
 								if(!(bracket_exp.wordSymbol.word=="("&&exp.wordSymbol.word==":")){
 									variable.array.push(derefValue(value));//for tuples, pattern `a:b` does not add item
 								}
@@ -1008,7 +1025,8 @@ const fs = Deno;//require("fs");
 								}
 								value = try_getPropertyValueRef(parent,propertyNameValue);
 								if(!!exp.args[2]){//`array.= \exp`
-									value = functionCall(value,evalCode.statement([exp.args[2]],context),todo.silent("get `#.` from namespace's class instance object"));
+									let arg = evalCode.statement(exp.args[2],context);
+									value = functionCall(value,[arg],todo.silent("get `#.` from namespace's class instance object"));
 								}
 								return value;
 							}],
@@ -1285,17 +1303,21 @@ const fs = Deno;//require("fs");
 				],value);
 			}
 		};
-		function functionCall(foo:Value|PropertyRef,args:ObjectValue|Value[],self):Value&(Value_Assignable|Value_Returnable){
+		function functionCall(foo:Value|PropertyRef,args:ObjectValue|Value[],self?:ObjectValue|Array|Object,hasSelf = false):Value&(Value_Assignable|Value_Returnable){
 			assert(//args:ObjectValue|Value[]
 				args instanceof ObjectValue || 
-				args instanceof Array && (!args[0] || args[0] instanceof ObjectValue)
+				args instanceof Array
 			);
 			const getArg0 = ()=>try_getPropertyValue(args,0);
+			if(self === undefined){
+				self = foo instanceof PropertyRef?foo.parentValueObject||foo.parent:undefined;//:Option<ObjectValue|Object|Array>
+				hasSelf = true;
+			}
 			foo = derefValueFully(foo);//:Value
 			let value:Value_Assignable&Value = match(foo,[
 				[_=>typeof foo == "function",()=>{
 					let argsArray:Array = try_toArray(args)??[];
-					foo(...argsArray)
+					return foo.call(self,...argsArray);//TODO: handle methods with 'this' better
 				}],
 				[_=>foo instanceof FunctionObj, ()=>{
 					if(foo instanceof ClassObj){
@@ -1347,6 +1369,7 @@ const fs = Deno;//require("fs");
 							if(typeof name == "number"){//`a[i]`
 								data = new PropertyParentPair({
 									parent:parent.array,
+									parentValueObject:parent,
 									name,
 									value:parent.array[name],
 									errorWordSymbol,
@@ -1386,7 +1409,22 @@ const fs = Deno;//require("fs");
 									}
 								}
 							}
-							if(!data)data = new PropertyParentPair({
+							assert(!data);
+							{//`a.=`
+								if(Object.hasOwn(defaultFunctions_ValueObject,name)){
+									data = new PropertyParentPair({
+										parent:parent.variables,
+										parentValueObject:parent,
+										name,
+										value:defaultFunctions_ValueObject[name],
+										errorWordSymbol,
+									});
+									assert(!!data);
+									break getData;
+								}
+							}
+							assert(!data);
+							data = new PropertyParentPair({
 								parent:parent.properties,
 								name,
 								value:undefined,
