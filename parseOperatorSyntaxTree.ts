@@ -102,6 +102,7 @@ export function parseIntoOperatorSyntaxTree_function(
 					"#.."     :{afix:OperatorData.AfixType.nofix},
 					":"       :{afix:OperatorData.AfixType.nofix},
 					"::"      :{afix:OperatorData.AfixType.nofix},
+					"{"       :{afix:OperatorData.AfixType.nofix},
 				},
 				{//consumes a key_exp
 					"$"       :{afix:OperatorData.AfixType.prefix},
@@ -121,7 +122,6 @@ export function parseIntoOperatorSyntaxTree_function(
 				{
 					"("       :{afix:OperatorData.AfixType.postfix},
 					"["       :{afix:OperatorData.AfixType.postfix},
-					"{"       :{afix:OperatorData.AfixType.postfix},
 					"`"       :{afix:OperatorData.AfixType.postfix},//early return
 					"."       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left},
 					"?."      :{afix:OperatorData.AfixType.infix,parameter:OperatorData.left},//same as in javascript's `option?.property`
@@ -430,14 +430,19 @@ export function parseIntoOperatorSyntaxTree_function(
 				generate_exp_objects:for (; i < words.length && (word=words[i]) && word.word!=";";i++){
 					let exp = match(word.type,[//:mutate current_expression & valueStack
 						[[SyntaxTree.type.bracket],()=>
-							new Expression.Bracket(word,{
-								contence:contexts.expressions(0,word),
-								operatorData:operatorProceedence[word.word].postfix,//non-functioncall brackets (e.g.`;();` instead of `foo()`) are handled as a special case later on.
-								afix:isCanHaveLeftArgument(i,true)?
-									SyntaxTree.AfixType.postfix:
-									SyntaxTree.AfixType.nofix,
-								knownAfix:false,
-							})
+							match(word.word,[
+								[["(","["],()=>new Expression.Bracket(word,{
+									contence:contexts.expressions(0,word),
+									operatorData:operatorProceedence[word.word].postfix,//non-functioncall brackets (e.g.`;();` instead of `foo()`) are handled as a special case later on.
+									afix:isCanHaveLeftArgument(i,true)?
+										SyntaxTree.AfixType.postfix:
+										SyntaxTree.AfixType.nofix,
+									knownAfix:false,
+								})],
+								["{",()=>new Expression.Bracket(word,{
+									contence:contexts.expressions(0,word),
+								})],
+							])
 						],
 						[[SyntaxTree.type.label],()=>
 							new Expression.Label(word)
@@ -555,7 +560,10 @@ export function parseIntoOperatorSyntaxTree_function(
 						}],
 					]);
 					if(exp)exps.push(exp);
-					if(word.word == "{" && (!words[i+1] || words[i+1].word == "{" || ![SyntaxTree.type.bracket,SyntaxTree.type.operator].includes(words[i+1].type))){//do not need ';' for '{}'s
+					if(word.word == "{" && (!words[i+1] || words[i+1].word == "{" || 
+						![SyntaxTree.type.bracket,SyntaxTree.type.operator].includes(words[i+1].type)//bodged; 
+						&& exps[exps.length-2]?.wordSymbol?.subtype2 != SyntaxTree.subtype2.allowsDoubleExp
+					)){//do not need ';' for '{}'s
 						i++;
 						break;
 					}

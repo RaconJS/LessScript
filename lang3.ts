@@ -867,11 +867,18 @@ const fs = Deno;//require("fs");
 						...([[reduceFunction],[reduceFunction,start]][+(arguments.length>2)])
 					);
 				},
+				iterate(self:Number,foo){
+					return new Array(self).fill().map((_,i)=>functionCall(foo,[i]))
+				},
 			};
-			const defaultFunctions_ValueObject = {
-				"="(){return defualtFunctionsInternal.map(this.array,...arguments)},
+			const defaultFunctions_ObjectValue = {
+				"="(){return new ObjectValue({array:defualtFunctionsInternal.map(this.array,...arguments)})},
 				">"(){return defualtFunctionsInternal.reduce(this.array,...arguments)},
 			};
+			const defaultFunctions_number = {
+				"<"(){return defualtFunctionsInternal.iterate(+this,...arguments)},
+			};
+			const defaultFunctions_all = {};
 			class Namespace{
 				constructor(data={}){Object.assign(this,data)}
 				parent?:Namespace&Tree<Namespace> = null;
@@ -1062,7 +1069,6 @@ const fs = Deno;//require("fs");
 								let value:Value = evalCode.statement(exp.args[0]??exp.args[1],context);
 								todo.silent("handle `&a` references properly");
 								let valueRef = ValueRef.fromValue(value);
-								loga(valueRef)
 								if(value instanceof PropertyRef && value != valueRef){//turns variable into a reference if it was not already
 									value.set(valueRef);
 								}
@@ -1153,7 +1159,9 @@ const fs = Deno;//require("fs");
 										};
 										function handleComparisonChain(exp):{value:Value&bool,args:Value[2]}{
 											if(exp.afix == Expression.AfixType.infix && exp.wordSymbol.word.match(/[<>]=?|[!=]==?/)){
-												const foo:(x,y)=>bool = exp.wordSymbol.word == "=="?equality:
+												const foo:(x,y)=>bool = 
+													exp.wordSymbol.word == "=="?equality:
+													exp.wordSymbol.word == "!="?(x,y)=>!equality(x,y):
 													new Function("x,y",`return x ${exp.wordSymbol.word} y`)
 												;
 												let args:Value_Returnable[] = [
@@ -1171,7 +1179,7 @@ const fs = Deno;//require("fs");
 								],
 								[
 									word=>exp.afix == Expression.AfixType.prefix &&
-									word.match(/[+\-~]/),
+									word.match(/[+\-~!]/),
 									()=>numericOperator(
 										new Function("_,x",`return ${exp.wordSymbol.word} x`)
 									)
@@ -1286,7 +1294,7 @@ const fs = Deno;//require("fs");
 				]);
 			},
 			getName(name_exp:Expression<SyntaxTree.type.Label|"$"|"$$">):Name{
-				if(name_exp.wordSymbol.type == SyntaxTree.type.Label)return name_exp.wordSymbol.word;
+				if(name_exp.wordSymbol.type == SyntaxTree.type.label)return name_exp.wordSymbol.word;
 				if(name_exp.wordSymbol.word == "$$")return Symbol("unique `$$`");
 				assert(name_exp.wordSymbol.word == "$",name_exp)
 				let value = evalCode.statement(exp.args[1],context);
@@ -1317,7 +1325,7 @@ const fs = Deno;//require("fs");
 			let value:Value_Assignable&Value = match(foo,[
 				[_=>typeof foo == "function",()=>{
 					let argsArray:Array = try_toArray(args)??[];
-					return foo.call(self,...argsArray);//TODO: handle methods with 'this' better
+					return foo(...argsArray);//TODO: handle methods with 'this' better
 				}],
 				[_=>foo instanceof FunctionObj, ()=>{
 					if(foo instanceof ClassObj){
@@ -1353,6 +1361,24 @@ const fs = Deno;//require("fs");
 			return value;
 		}
 		//get properties & keys:
+			function try_getDefaultFunction(parent:Value,name:Name,errorWordSymbol?:WordSymbol):Option<PropertyParentPair>{//`a.=`
+				const getPropertyData = (value)=>new PropertyParentPair({
+					parent:parent.variables,
+					parentValueObject:parent,
+					name,
+					value,
+					errorWordSymbol,
+				});
+				if(Object.hasOwn(defaultFunctions_all,name)){
+					return getPropertyData(defaultFunctions_all[name].bind(parent));
+				}
+				if(typeof parent == "number" && Object.hasOwn(defaultFunctions_number,name)){
+					return getPropertyData(defaultFunctions_number[name].bind(parent));
+				}
+				if(parent instanceof ObjectValue && Object.hasOwn(defaultFunctions_ObjectValue,name)){
+					return getPropertyData(defaultFunctions_ObjectValue[name].bind(parent));
+				}
+			}
 			function try_getPropertyData(parent:Value,name:Name|Index,errorWordSymbol?:WordSymbol):Option<PropertyParentPair>{
 				parent = derefValue(parent);
 				if(parent === null || parent === undefined){
@@ -1360,7 +1386,7 @@ const fs = Deno;//require("fs");
 					return null;
 				}
 				const constructor:Class = Object.getPrototypeOf(parent).constructor;
-				assume(parent instanceof constructor);
+				assume(!(typeof parent == "object") || parent instanceof constructor);
 				return match(parent,[
 					[_=>parent instanceof ObjectValue,()=>{
 						if(parent[isSearched])return null;//prevent infinite loops, from recursive prototype chains
@@ -1410,19 +1436,8 @@ const fs = Deno;//require("fs");
 								}
 							}
 							assert(!data);
-							{//`a.=`
-								if(Object.hasOwn(defaultFunctions_ValueObject,name)){
-									data = new PropertyParentPair({
-										parent:parent.variables,
-										parentValueObject:parent,
-										name,
-										value:defaultFunctions_ValueObject[name],
-										errorWordSymbol,
-									});
-									assert(!!data);
-									break getData;
-								}
-							}
+							data = try_getDefaultFunction(parent,name,errorWordSymbol);
+							if(!!data)break getData;
 							assert(!data);
 							data = new PropertyParentPair({
 								parent:parent.properties,
@@ -1440,7 +1455,13 @@ const fs = Deno;//require("fs");
 						parent instanceof ClassObj ||
 						parent instanceof ModuleObj
 					,()=>todo("handle getting/setting properties to functions")],
-				],()=>new PropertyParentPair({parent,name,value:parent[name],valueExists:Object.hasOwn(parent,name)}))
+				],()=>{
+					let propertyData = new PropertyParentPair({parent,name,value:parent[name],valueExists:Object.hasOwn(parent,name)});
+					if(!propertyData.valueExists){
+						propertyData = try_getDefaultFunction(parent,name,errorWordSymbol)??propertyData;
+					}
+					return propertyData;
+				})
 			}
 			function try_getPropertyValueRef(parent:Value,name_value:Value,errorWordSymbol?:WordSymbol):Value{//returns dereferenced value
 				let data = try_getPropertyData(parent,derefValue(name_value),errorWordSymbol);
@@ -1574,7 +1595,7 @@ function compile(text,throwError,fileName="main file"){
 		parseAST(abstractSyntaxTree);//:mutates rootPattern
 		let value = runAST(abstractSyntaxTree);
 		//assert(abstractSyntaxTree == rootPattern);
-		//console.error(printTree(abstractSyntaxTree));
+		console.error(printTree(abstractSyntaxTree));
 		console.error(value);
 		return value;
 	}
