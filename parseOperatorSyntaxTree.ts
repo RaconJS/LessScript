@@ -10,6 +10,7 @@ export function parseIntoOperatorSyntaxTree_function(
 		forBailOld,
 		forBailGenerator,
 		matchFlags,
+		printTree,
 		EnumSymbols,
 		SyntaxTree,
 		WordSymbol,
@@ -691,14 +692,20 @@ export function parseIntoOperatorSyntaxTree_function(
 									exp.isReverseOrder = true;
 								}
 							}
+							if(exp.wordSymbol.word == "#" && !(//allows `#+b`--> `{#} + {b}` instead of `#{+b}` 
+								exps[i+1].wordSymbol.type == SyntaxTree.type.label||
+								["$","$$"].includes(exps[i+1].wordSymbol.word)
+							))continue;
 							else{
-								if(exp.wordSymbol.word == "#" && !(//allows `#+b`--> `{#} + {b}` instead of `#{+b}` 
-									exps[i+1].wordSymbol.type == SyntaxTree.type.label||
-									["$","$$"].includes(exps[i+1].wordSymbol.word)
-								))continue;
 								collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
 								const argExp = tryGetNewAddableArg();
 								exp.args[1] = argExp;
+								if(exp.wordSymbol.word != "for" && exp.wordSymbol.subtype == SyntaxTree.subtype.statement && argExp && argExp.wordSymbol.word != "=>"){//allow for `if exp exp` --> `if exp => exp`
+									//note: `for` statements are ecluded since can have `for exp` e.g. `for{print in[1;2;3]}`
+									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
+									const argExp = tryGetNewAddableArg();
+									exp.args[2] = argExp;
+								}
 								handleDotOperatorRightSideArgument(exps,i);
 								if(exp.wordSymbol.word == "/" && exps[i+1]?.wordSymbol.word == "\\"){//'/(...)\(...)' ; handle classes with constructor functions
 									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,isTypeSyntax,isParameter);

@@ -583,6 +583,7 @@ const fs = Deno;//require("fs");
 		forBailOld,
 		forBailGenerator,
 		matchFlags,
+		printTree,
 		EnumSymbols,
 		SyntaxTree,
 		WordSymbol,
@@ -1074,14 +1075,44 @@ const fs = Deno;//require("fs");
 									word=>exp.afix == Expression.AfixType.infix &&
 									word.match(/[<>]=?|[!=]==?/),
 									()=>{
-										function equality(x:Value,y:Value){
+										function equality(x:Value_Derefed,y:Value_Derefed){
 											if(x == y)return true;
 											if(!(x instanceof Object && y instanceof Object))return false;
-											if(x instanceof ObjectValue && y instanceof ObjectValue){//BODGED
-												return equality(x.array,y.array) && equality(x.variables,y.variables);
+											if(x[isSearched]||y[isSearched])return false;
+											x[isSearched] = true;
+											y[isSearched] = true;
+											let bool = false;getBool:{
+												if(x instanceof ObjectValue && y instanceof ObjectValue){//BODGED
+													bool = equality(x.array,y.array) && equality(x.variables,y.variables);
+													break getBool;
+												}
+												if(x instanceof Array && y instanceof Array){
+													if(x.length != y.length){break getBool;}
+													for(let i=0;i<x.length;i++){
+														if(!(i in x) && !(i in y))continue;//handles gaps in array
+														if(!equality(x[i],y[i]))break getBool;
+													}
+													bool = true;
+													break getBool;
+												}
+												if(x instanceof Object && y instanceof Object){
+													let keys:Name[][2] = [x,y].map(obj=>[
+														...Object.keys(obj),
+														...Object.getOwnPropertySymbols(obj)
+															.filter(v=>!compilerOnlySymbols.includes(v))
+													]);
+													if(keys[0].length != keys[1].length)break getBool;
+													for(let keyX of keys){
+														if(!Object.hasOwn(keyX))break getBool;
+														if(!equality(x[keyX],y[keyX]))break getBool
+													}
+													bool = true;
+													break getBool;
+												}
 											}
-											todo();
-											return Object.keys({...x,...y}).forEach(key=>x[key] == y[key])
+											delete x[isSearched];
+											delete y[isSearched];
+											return bool ?? false;
 										};
 										function handleComparisonChain(exp):{value:Value&bool,args:Value[2]}{
 											if(exp.afix == Expression.AfixType.infix && exp.wordSymbol.word.match(/[<>]=?|[!=]==?/)){
@@ -1089,10 +1120,9 @@ const fs = Deno;//require("fs");
 													new Function("x,y",`return x ${exp.wordSymbol.word} y`)
 												;
 												let args:Value_Returnable[] = [
-													derefValue(handleComparisonChain(exp.args[0])).args[1],
-													derefValue(handleComparisonChain(exp.args[1])).args[0],
+													derefValueFully(handleComparisonChain(exp.args[0])).args[1],
+													derefValueFully(handleComparisonChain(exp.args[1])).args[0],
 												];
-												loga(`${args[0]} ${exp.wordSymbol.word} ${args[1]}`)
 												return {value:foo(args[0],args[1]),args};
 											}else{
 												let arg = evalCode.statement(exp,context);
@@ -1125,13 +1155,13 @@ const fs = Deno;//require("fs");
 										[[Context.ContextType.if],()=>{assert.impossible("handled elsewhere")}]
 									]);
 								}],
-								["if",()=>{
+								["if",()=>{//`if a => b` or `if a b`
 									let innerContext = context.new_child({contextType:Context.ContextType.if});
-									assume(exp.args[1].wordSymbol.word == "=>","e.g. 'if name;' is not defined in the syntax spec")
-									const arrowExp = exp.args[1];
-									let argument = derefValue(evalCode.statement(arrowExp.args[0],context));
+									assume(exp.args[1].wordSymbol.word == "=>" || exp.args[2],"e.g. 'if name;' is not defined in the syntax spec")
+									const arrowExpArgs:Expression[2] = exp.args[2]?[exp.args[1],exp.args[2]]:exp.args[1].args;
+									let argument = derefValue(evalCode.statement(arrowExpArgs[0],context));
 									innerContext.add_parameterSymbols({"#?":[argument]});
-									let value = argument?evalCode.statement(arrowExp.args[1],context):null;
+									let value = argument?evalCode.statement(arrowExpArgs[1],context):null;
 									value = new ValueWrapper({value,statementReturnValue:{value:argument}})
 									return value;
 								}],
@@ -1140,7 +1170,6 @@ const fs = Deno;//require("fs");
 									if(!(value instanceof ValueWrapper) || !value.statementReturnValue)
 										exp.wordSymbol.throwError("syntax","missing if statement",e=>Error(e))
 									let statementReturnValue = value.statementReturnValue;
-									loga("??",statementReturnValue)
 									if(statementReturnValue.value){
 										return value;
 									}
@@ -1498,7 +1527,7 @@ function compile(text,throwError,fileName="main file"){
 	}
 }
 let {data:a,fileName} = (()=>{
-	const fileName = Deno.args[0]??"temp.lang3";
+	const fileName = Deno.args[0]??"code/temp.lang3";
 	const data = getFile_expect(fileName);
 	return {fileName,data};
 })();

@@ -385,6 +385,12 @@ mod signal_polyfill : {
 	);
 	assert obj.name == foo == obj.$FooSymbol.foo;
 };
+{//idea 'statement exp => exp' <-- 'statement exp exp' ; for statements that always have 2 parts
+	exp:;
+	if 1==1 print,1;
+	while exp exp;
+	match exp {};
+};
 a.b.c.d.e.f;
 (a.b:2):(a:(b:2));
 {::T:a=exp;};
