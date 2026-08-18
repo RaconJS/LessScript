@@ -435,12 +435,13 @@ export function parseIntoOperatorSyntaxTree_function(
 									contence:contexts.expressions(0,word),
 									operatorData:operatorProceedence[word.word].postfix,//non-functioncall brackets (e.g.`;();` instead of `foo()`) are handled as a special case later on.
 									afix:isCanHaveLeftArgument(i,true)?
-										SyntaxTree.AfixType.postfix:
-										SyntaxTree.AfixType.nofix,
+										Expression.AfixType.postfix:
+										Expression.AfixType.nofix,
 									knownAfix:false,
 								})],
 								["{",()=>new Expression.Bracket(word,{
 									contence:contexts.expressions(0,word),
+									afix:Expression.AfixType.nofix
 								})],
 							])
 						],
@@ -560,9 +561,11 @@ export function parseIntoOperatorSyntaxTree_function(
 						}],
 					]);
 					if(exp)exps.push(exp);
-					if(word.word == "{" && (!words[i+1] || words[i+1].word == "{" || 
-						![SyntaxTree.type.bracket,SyntaxTree.type.operator].includes(words[i+1].type)//bodged; 
-						&& exps[exps.length-2]?.wordSymbol?.subtype2 != SyntaxTree.subtype2.allowsDoubleExp
+					if(word.word == "{" && (
+						!words[i+1] || 
+						![SyntaxTree.type.bracket,SyntaxTree.type.operator].includes(words[i+1]?.type) ||
+						!(operatorProceedence[words[i+1].word].infix || operatorProceedence[words[i+1].word].postfix) &&
+						exps[exps.length-2]?.wordSymbol?.subtype2 != SyntaxTree.subtype2.allowsDoubleExp
 					)){//do not need ';' for '{}'s
 						i++;
 						break;
@@ -591,7 +594,7 @@ export function parseIntoOperatorSyntaxTree_function(
 							return exp?.operatorData?.optionalArg?.[j] || exp?.wordSymbol?.subtype == SyntaxTree.subtype.declaration;
 						}
 						function missingOperatorError(selfExp,argExp,argIndex){
-							if(0)console.error(printTree(exps));
+							if(1)console.error(printTree(exps));
 							selfExp.wordSymbol.throwError("syntax",`operator '${selfExp.wordSymbol}' missing ${["left", "right"][argIndex]} argument`,e=>Error(e));
 						}
 						function handleBracketAfix(exps,i){
