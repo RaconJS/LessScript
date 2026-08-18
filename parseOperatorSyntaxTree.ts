@@ -692,7 +692,7 @@ export function parseIntoOperatorSyntaxTree_function(
 									exp.isReverseOrder = true;
 								}
 							}
-							if(exp.wordSymbol.word == "#" && !(//allows `#+b`--> `{#} + {b}` instead of `#{+b}` 
+							else if(exp.wordSymbol.word == "#" && !(//allows `#+b`--> `{#} + {b}` instead of `#{+b}` 
 								exps[i+1].wordSymbol.type == SyntaxTree.type.label||
 								["$","$$"].includes(exps[i+1].wordSymbol.word)
 							))continue;
@@ -700,8 +700,7 @@ export function parseIntoOperatorSyntaxTree_function(
 								collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
 								const argExp = tryGetNewAddableArg();
 								exp.args[1] = argExp;
-								if(exp.wordSymbol.word != "for" && exp.wordSymbol.subtype == SyntaxTree.subtype.statement && argExp && argExp.wordSymbol.word != "=>"){//allow for `if exp exp` --> `if exp => exp`
-									//note: `for` statements are ecluded since can have `for exp` e.g. `for{print in[1;2;3]}`
+								if(exp.wordSymbol.subtype2 == SyntaxTree.subtype2.allowsDoubleExp && argExp && argExp.wordSymbol.word != "=>"){//allow for `if exp exp` --> `if exp => exp`
 									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
 									const argExp = tryGetNewAddableArg();
 									exp.args[2] = argExp;

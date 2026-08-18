@@ -343,6 +343,8 @@ const fs = Deno;//require("fs");
 					"struct",// `(`
 					"array",// `[`
 					"block",// `(`
+				// statement
+					"allowsDoubleExp"//statement that allow for `statement exp exp`
 			);
 			static AfixType = {//e.g. '!a' is prefix --> '0b01'
 				nofix:0b00,//'a'
@@ -412,7 +414,7 @@ const fs = Deno;//require("fs");
 									word.match(/^¬$/) ? {type:SyntaxTree.type.operator} ://'¬'
 									word.match(/^\?!?$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.return} ://
 									word.match(/^£$/) ? {type:SyntaxTree.type.operator}://void operator
-									word.match(/^\.$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.autoParameter,subtype2:SyntaxTree.subtype2.dot} ://dot operator 
+									word.match(/^\.$/) ? {type:SyntaxTree.type.operator,subtype2:SyntaxTree.subtype2.dot} ://dot operator 
 									word.match(/^#\.$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.autoParameter,subtype2:SyntaxTree.subtype2.dot} ://dot operator 
 									word.match(/^\.\.=?$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.interval} ://interval '1..3'
 									word.match(/^(?:ref)$/) ? {type:SyntaxTree.type.operator} :
@@ -425,7 +427,8 @@ const fs = Deno;//require("fs");
 									word.match(/^\$$/) ? {type:SyntaxTree.type.operator} ://'$type' '$key'
 									word.match(/^[$@*]\*$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.prefix}://'@*' in '@* = (a=1,b=2,c=3)'
 									word.match(/^\.\.\.$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:if|while|for|match)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement} :
+									word.match(/^(?:if|while|match)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement,subtype2:SyntaxTree.subtype2.allowsDoubleExp} :
+									word.match(/^for$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement} :
 									word.match(/^(?:break|continue|return|catch|assert|as|is)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:mod)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^in$/) ? {type:SyntaxTree.type.operator} :
@@ -627,6 +630,7 @@ const fs = Deno;//require("fs");
 					[[SyntaxTree.type.bracket],_=>{
 						const bracket = exp;
 						forEachExp(exp.contence,context,paramPath)
+						if(exp.args)forEachExp(exp.args,context,paramPath)
 					}],
 					[[SyntaxTree.type.operator],_=>{
 						if(exp.wordSymbol.subtype == SyntaxTree.subtype.autoParameter){
@@ -637,15 +641,18 @@ const fs = Deno;//require("fs");
 									return exp.paramRef = context.function.functionExp;
 								}],
 								[["#?","#!","#.","#/","#\\","#.."],_=>{
-									exp.paramRef = context.parameters[exp.wordSymbol.word]?.pop();
+									exp.paramRef = context.parameters[exp.wordSymbol.word]?.pop?.();
+									exp.autoParameterIndex = context.parameters[exp.wordSymbol.word].length;
 									return exp.paramRef;
 								}],
 							]);
 							if(!exp.paramRef){
-								if(["#","##"].includes(exp.wordSymbol.word))
-									exp.wordSymbol.throwError("syntax","missing function for parameter",e=>Error(e));
-								else
-									exp.wordSymbol.throwError("syntax","missing statement for parameter",e=>Error(e));
+								let missingStatementName = match(exp.wordSymbol.word,[
+									[["#", "##", "#\\"],()=>"function"],
+									[["#?"],()=>"if statement"],
+									[["#\\"],()=>"class"],
+								],"statement");
+								exp.wordSymbol.throwError("syntax",`missing ${missingStatementName} for parameter`,e=>Error(e));
 							}
 						}
 						function addStatementParameter(parameterName,numOfParameters = 1){
@@ -655,7 +662,7 @@ const fs = Deno;//require("fs");
 								for(let i=0;i<numOfParameters;i++)context.statements.push(exp)
 							}
 							else{
-								newParmaters[parameterName] = exp;
+								newContext.parameters[parameterName] = [exp];
 								if(parameterName == "#\\"){
 									newContext.function = {
 										autoParameterIndex:0,
@@ -758,11 +765,6 @@ const fs = Deno;//require("fs");
 				value:Value_Storable;
 				deref(){return this.value;}
 				derefFully(){return derefValueFully(this.value);}//ignores storable PropertyRefs
-				get(){return this.value;}
-				set(value:Value_Storable){
-					assert(!(value instanceof PropertyParentPair),"use derefValueFully ; `ValueRef.set(derefValueFully(value))`");
-					return this.value = value;
-				}
 				fromValue(value:Value|ValueRef):ValueRef{
 					return value instanceof ValueRef?value:
 						ValueRef({value:derefValueFully(value)})
@@ -891,8 +893,8 @@ const fs = Deno;//require("fs");
 				let hasSepparator = false;
 				for(let exp of exps){
 					let value = evalCode.statement(exp,context);
-					hasSepparator = exp.hasSepparator;
 					if(exp.wordSymbol.word == "£" && !exp.args[0])continue;
+					hasSepparator = exp.hasSepparator;
 					lastValue = value;
 					forEachFunction?.(value);
 				}
@@ -1038,14 +1040,20 @@ const fs = Deno;//require("fs");
 								return valueRef;//BODGED
 							}],
 							...[//parameters
-								[["##","#"],//for both functions and class
+								[()=>exp.wordSymbol.subtype == SyntaxTree.subtype.autoParameter,//`##` `#?` `#@` etc...
 									()=>{
-										const args:Value[] = context.arguments[Context.ParameterSymbol["##"]] ?? [];
+										const contextParameterSymbol:Context.ParameterSymbol = Context.ParameterSymbol[
+											exp.wordSymbol.word.replace(/^#$/,"##")
+										];
+										const args:Value[] = context.arguments[contextParameterSymbol] ?? [];
 										assume(args instanceof Array);
 										let value = args[exp.autoParameterIndex]??null;
 										if(exp.args[1]){
 											let name:Name = evalCode.getName(exp.args[1]);
-											context.functionInstance.declareVariable(name,value);
+											if(["##","#"].includes(exp.wordSymbol.word))
+												context.functionInstance.declareVariable(name,value);
+											else
+												context.namespace.declareVariable(name,value);
 										}
 										return value;
 									}
@@ -1120,8 +1128,8 @@ const fs = Deno;//require("fs");
 													new Function("x,y",`return x ${exp.wordSymbol.word} y`)
 												;
 												let args:Value_Returnable[] = [
-													derefValueFully(handleComparisonChain(exp.args[0])).args[1],
-													derefValueFully(handleComparisonChain(exp.args[1])).args[0],
+													derefValueFully(handleComparisonChain(exp.args[0]).args[1]),
+													derefValueFully(handleComparisonChain(exp.args[1]).args[0]),
 												];
 												return {value:foo(args[0],args[1]),args};
 											}else{
@@ -1160,9 +1168,9 @@ const fs = Deno;//require("fs");
 									assume(exp.args[1].wordSymbol.word == "=>" || exp.args[2],"e.g. 'if name;' is not defined in the syntax spec")
 									const arrowExpArgs:Expression[2] = exp.args[2]?[exp.args[1],exp.args[2]]:exp.args[1].args;
 									let argument = derefValue(evalCode.statement(arrowExpArgs[0],context));
-									innerContext.add_parameterSymbols({"#?":[argument]});
-									let value = argument?evalCode.statement(arrowExpArgs[1],context):null;
-									value = new ValueWrapper({value,statementReturnValue:{value:argument}})
+									innerContext.add_parameterSymbols({[Context.ParameterSymbol["#?"]]:[argument]});
+									let value =argument? unwrapValue(evalCode.statement(arrowExpArgs[1],context)):null;
+									value = new ValueWrapper({value,statementReturnValue:{value:argument}});
 									return value;
 								}],
 								["else",()=>{
@@ -1430,7 +1438,7 @@ const fs = Deno;//require("fs");
 			}
 			function derefValueFully(value:Value|PropertyRef):Value_Storable{//for when 
 				if(value instanceof PropertyRef)return value.derefFully();
-				if(value instanceof ValueWrapper)return value.deref();
+				if(value instanceof ValueWrapper)return value.derefFully();
 				return value;
 			}
 		//----
@@ -1515,7 +1523,7 @@ function compile(text,throwError,fileName="main file"){
 		parseAST(abstractSyntaxTree);//:mutates rootPattern
 		let value = runAST(abstractSyntaxTree);
 		//assert(abstractSyntaxTree == rootPattern);
-		//console.error(printTree(abstractSyntaxTree));
+		console.error(printTree(abstractSyntaxTree));
 		console.error(value);
 		return value;
 	}
