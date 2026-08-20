@@ -2,7 +2,7 @@
 	//1263 build type class for the language's type system
 //name suggetions: quad`.qd` (the Quick Unreadable And Dirty programming language), `.cr` Crunch
 //TODO: add code to support '::=' making '::' have the same syntax as ':'
-const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[@$#]\*|(?:\?&|&\?|\?\||\?!)|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|!!!|=>|->|[!=]==|[><!=]=?|>{1,3}|<{1,2}|([+\-*%&|^~])\2?|#(?:\.\.|[#@?\./\\])|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:0[box][_0-9A-Fa-f]+|[1-9][_\d]*)\b|\.\.\.|\.\.=?|\.|\b\w+\b|\S/g;
+const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[@$#]\*|(?:\?&|&\?|\?\||\?!)|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|=>|->|[!=]==|[><!=]=?|>{1,3}|<{1,2}|([+\-*%&|^~])\2?|#(?:\.\.|[#@?/\\])|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:(?:\d|[1-9][_\d]*)(?:\.[_\d]+)?|0[box][_\dA-Fa-f]+(?:\.[_\dA-Fa-f]+)?)\b|!!!|\.\.\.|\.\.=?|\.|\b\w+\b|\S/g;//TODO: add back '#.'
 	//note: float numbers are handed during syntax parting to allow for '3.<' aswell as '3.2'
 	//TODO:handle format strings: need to combine words together when a format string is encountered
 		//currently cannot embed format strings in other format strings
@@ -675,7 +675,7 @@ const fs = Deno;//require("fs");
 									[["#", "##", "#\\", "#.."],()=>"function"],
 									[["#?"],()=>"if statement"],
 									[["#\\"],()=>"class"],
-								],"statement");
+								],()=>"statement");
 								exp.wordSymbol.throwError("syntax",`missing ${missingStatementName} for parameter`,e=>Error(e));
 							}
 						}
@@ -856,9 +856,10 @@ const fs = Deno;//require("fs");
 				}
 				static new_root(){
 					return new Context({
-						namespace:new Namespace({
+						namespace:new Namespace({variables:{
 							inspect:(value,javascript_string)=>new Function("v,value",`return ${javascript_string}`)(value,value),
-						}),
+							r:Math.random,
+						}}),
 					});
 				}
 				set_parameterSymbols(symbols:{[ParameterSymbol]:Value[]}){
@@ -866,7 +867,7 @@ const fs = Deno;//require("fs");
 					return this;
 				}
 				add_parameterSymbols(symbols:{[ParameterSymbol]:Value[]}){
-					Object.getOwnPropertySymbols(symbols).forEach(symbol=>(this.arguments[symbol]??=[]).push(...symbols[symbol]));
+					getAllowedSymbols(symbols).forEach(symbol=>(this.arguments[symbol]??=[]).push(...symbols[symbol]));
 					return this;
 				}
 				clone(){
@@ -913,16 +914,33 @@ const fs = Deno;//require("fs");
 						...([[reduceFunction],[reduceFunction,start]][+(arguments.length>2)])
 					);
 				},
-				iterate(self:Number,foo){
+				reduceForNumber(self:Number,start,foo){
+					assert(typeof self == "number");
+					let innerFunction = arguments.length>2?foo:start;
+					let reduceFunction = (s,v,i,a)=>functionCall(innerFunction,[s,i,a]);
+					return new Array(self).fill().reduce(
+						...([[reduceFunction],[reduceFunction,start]][+(arguments.length>2)])
+					);
+				},
+				iterate(self:Number,foo):Array{
 					return new Array(self).fill().map((_,i)=>functionCall(foo,[i]))
 				},
+				repeat(self:Number,foo):void{
+					for(let i=0;i<self;i++)functionCall(foo,[i]);
+				}
 			};
 			const defaultFunctions_ObjectValue = {
-				"="(){return new ObjectValue({array:defualtFunctionsInternal.map(this.array,...arguments)})},
-				">"(){return defualtFunctionsInternal.reduce(this.array,...arguments)},
+				"="():Array{return defualtFunctionsInternal.map(this.array,...arguments)},
+				">"():Value{return defualtFunctionsInternal.reduce(this.array,...arguments)},
+			};
+			const defaultFunctions_Array = {
+				"="():Array{return defualtFunctionsInternal.map(this,...arguments)},
+				">"():Value{return defualtFunctionsInternal.reduce(this,...arguments)},
 			};
 			const defaultFunctions_number = {
-				"<"(){return defualtFunctionsInternal.iterate(+this,...arguments)},
+				"<"():Array{return defualtFunctionsInternal.iterate(+this,...arguments)},
+				"="():Array{return defualtFunctionsInternal.repeat(+this,...arguments)},
+				">"():Value{return defualtFunctionsInternal.reduceForNumber(+this,...arguments)},
 			};
 			const defaultFunctions_all = {};
 			class Namespace{
@@ -1191,7 +1209,7 @@ const fs = Deno;//require("fs");
 									word=>exp.afix == Expression.AfixType.infix &&
 									word.match(/[<>]=?|[!=]==?/),
 									()=>{
-										function equality(x:Value_Derefed,y:Value_Derefed){
+										function equality(x:Value_Derefed,y:Value_Derefed){//`a==b`
 											if(x == y)return true;
 											if(!(x instanceof Object && y instanceof Object))return false;
 											if(x[isSearched]||y[isSearched])return false;
@@ -1199,7 +1217,7 @@ const fs = Deno;//require("fs");
 											y[isSearched] = true;
 											let bool = false;getBool:{
 												if(x instanceof ObjectValue && y instanceof ObjectValue){//BODGED
-													bool = equality(x.array,y.array) && equality(x.variables,y.variables);
+													bool = equality(x.array,y.array) && equality(x.properties,y.properties);
 													break getBool;
 												}
 												if(x instanceof Array && y instanceof Array){
@@ -1214,13 +1232,12 @@ const fs = Deno;//require("fs");
 												if(x instanceof Object && y instanceof Object){
 													let keys:Name[][2] = [x,y].map(obj=>[
 														...Object.keys(obj),
-														...Object.getOwnPropertySymbols(obj)
-															.filter(v=>!compilerOnlySymbols.includes(v))
+														...getAllowedSymbols(obj)
 													]);
 													if(keys[0].length != keys[1].length)break getBool;
 													for(let keyX of keys){
 														if(!Object.hasOwn(keyX))break getBool;
-														if(!equality(x[keyX],y[keyX]))break getBool
+														if(!equality(x[keyX],y[keyX]))break getBool;
 													}
 													bool = true;
 													break getBool;
@@ -1470,7 +1487,7 @@ const fs = Deno;//require("fs");
 					}
 				}],
 				[_=>foo instanceof ClassObj, ()=>foo(...args)],
-			],()=>try_getPropertyValue(foo,getArg0()));
+			],()=>try_getPropertyValueRef(foo,getArg0()));
 			return value;
 		}
 		//get properties & keys:
@@ -1489,6 +1506,9 @@ const fs = Deno;//require("fs");
 					return getPropertyData(defaultFunctions_number[name].bind(parent));
 				}
 				if(parent instanceof ObjectValue && Object.hasOwn(defaultFunctions_ObjectValue,name)){
+					return getPropertyData(defaultFunctions_ObjectValue[name].bind(parent));
+				}
+				if(parent instanceof Array && Object.hasOwn(defaultFunctions_Array,name)){
 					return getPropertyData(defaultFunctions_ObjectValue[name].bind(parent));
 				}
 			}
@@ -1539,7 +1559,7 @@ const fs = Deno;//require("fs");
 										getAsPropertiesSymbols(asObject),//these are the main properties, the type inbuilt classes use `/...`
 										getAsProperties(asObject),
 									];
-									for(const key of [...Object.keys(asObject),...Object.getOwnPropertySymbols(asObject)]){
+									for(const key of [...Object.keys(asObject),...getAllowedSymbols(asObject)]){
 										const value = asObject[key];
 										assert(Object.hasOwn(asObject,key));
 										const prototype = value;
@@ -1601,7 +1621,7 @@ const fs = Deno;//require("fs");
 			function getAsPropertiesSymbols(object?:Object):[key:Name,value:Value][]{
 				if(!object)return [];
 				assert(!(isSearched in object))
-				return Object.getOwnPropertySymbols(object)
+				return getAllowedSymbols(object)
 					.map(key=>[key,object[key]])
 					.filter(([key,_])=>!compilerOnlySymbols.includes(key))
 				;
@@ -1626,6 +1646,11 @@ const fs = Deno;//require("fs");
 				if(value instanceof ValueRef)return value.derefFully();
 				if(value instanceof ValueWrapper)return value.derefFully();
 				return value;
+			}
+		//----
+		//misc functions
+			function getAllowedSymbols(object){
+				return Object.getOwnPropertySymbols(object).filter(symbol=>!compilerOnlySymbols.includes(symbol));
 			}
 		//----
 		return evalCode.forEach_exps(rootPattern,Context.new_root());

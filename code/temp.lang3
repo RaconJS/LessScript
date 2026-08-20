@@ -1,9 +1,7 @@
-/*{
-	\{#..a;a}
-}[1;2;3;a:2];
-1+2¬*4;
-*/
-A:/a#b#c:(foo:2);
-a:A(a:2);
-assert a.foo == 2;
-a//{ a: 2, b: null, c: null }
+step:\#.>0<:\#+r();
+//normalDistrabution:\a#b:{sum:[];a.=\sum[step(b)]++;sum};
+normalDistrabution:\a#b:{sum:[1];sum[0]=2;sum};
+//normalDistrabution(100;100)
+a:[0];
+a[0]=8;
+a[0]
