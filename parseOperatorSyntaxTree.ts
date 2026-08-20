@@ -197,7 +197,7 @@ export function parseIntoOperatorSyntaxTree_function(
 				},
 				{
 					"*"       :{afix:OperatorData.AfixType.infix,optionalArg:[1,1]},
-					"/"       :{afix:OperatorData.AfixType.infix,optionalArg:[1,1]},
+					"/"       :{afix:OperatorData.AfixType.infix},
 				},
 				{
 					"+"       :{afix:OperatorData.AfixType.infix},
@@ -319,12 +319,14 @@ export function parseIntoOperatorSyntaxTree_function(
 				return new Expression.Value({
 					wordSymbol,
 					...wordSymbol.value!==undefined?{value:wordSymbol.value}:match(wordSymbol.subtype,[
+						[[
+							SyntaxTree.subtype.string,
+							SyntaxTree.subtype.formatString,
+							SyntaxTree.subtype.number
+						],()=>assert.impossible("handled ealier by WordSymbol generater")],
 						[[SyntaxTree.subtype.bool],()=>({
 							value:match(wordSymbol.word,[["true",()=>true],["false",()=>false]]),
 						})],
-						[[SyntaxTree.subtype.string],()=>todo(wordSymbol)],
-						[[SyntaxTree.subtype.formatString],()=>todo(wordSymbol)],
-						[[SyntaxTree.subtype.number],()=>todo(wordSymbol)],
 						[[SyntaxTree.subtype.null],()=>({value:null})],
 						[[SyntaxTree.subtype.undefined],()=>({value:undefined})],
 					],)
@@ -594,7 +596,7 @@ export function parseIntoOperatorSyntaxTree_function(
 							return exp?.operatorData?.optionalArg?.[j] || exp?.wordSymbol?.subtype == SyntaxTree.subtype.declaration;
 						}
 						function missingOperatorError(selfExp,argExp,argIndex){
-							if(1)console.error(printTree(exps));
+							if(0)console.error(printTree(exps));
 							selfExp.wordSymbol.throwError("syntax",`operator '${selfExp.wordSymbol}' missing ${["left", "right"][argIndex]} argument`,e=>Error(e));
 						}
 						function handleBracketAfix(exps,i){
@@ -613,7 +615,7 @@ export function parseIntoOperatorSyntaxTree_function(
 							let selfExp = exps[i];
 							let argExp = selfExp.args[1];
 							if(
-								selfExp.wordSymbol.subtype2 == SyntaxTree.subtype2.dot//'a.=b' '#.'
+								selfExp.wordSymbol.subtype2 == SyntaxTree.subtype2.dot//'a.=b' '#.=b'
 								&& argExp.wordSymbol.type == SyntaxTree.type.label
 								&& argExp.wordSymbol.subtype == SyntaxTree.subtype.operator
 								&& !(exps[i+1] && exps[i+1].afix & Expression.AfixType.operatorWithLeftArg)
@@ -638,7 +640,7 @@ export function parseIntoOperatorSyntaxTree_function(
 								exps.splice(i+1,1);
 								return argExp;
 							}
-							if(exp.wordSymbol.word == "\\"){//handle function parameter pattern `\exp#exp#exp:exp;`
+							if(exp.wordSymbol.word == "\\" || exp.wordSymbol.word == "/" && exp.afix == Expression.AfixType.prefix){//handle function parameter pattern `\exp#exp#exp:exp;`
 								let args = [];
 								exp.paramSeparators= [];//:Exp<"#">[]
 								let hasParamEnder;
