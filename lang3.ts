@@ -711,7 +711,7 @@ const fs = Deno;//require("fs");
 							["if",()=>addStatementParameter("#?")],
 						],()=>{forEachExp(exp.args,context,paramPath);})
 					}],
-					[[SyntaxTree.type.sepparator],()=>assert.impossible("is removed by AST generator")],
+					[[SyntaxTree.type.sepparator],()=>assert.impossibleCase("is removed by AST generator")],
 				])
 			}
 			forEachExp(rootPattern,new Context_parseAST(),null)
@@ -737,14 +737,17 @@ const fs = Deno;//require("fs");
 			type Index<array> = Number&Int;//index on object `array`
 				//where: array[index] : Valid
 			type Value =
-				PropertyRef|
+				ValueWrapper|
+				PropertyRef|PropertyRef<isReturnable<true>>|
+				ValueRef|
+				Value_Derefed
+			;
+			type Value_Assignable = 
 				ValueWrapper|
 				Value_Returnable
 			;
-			type Value_Assignable = 
+			type Value_Unwraped =
 				PropertyRef|
-				ValueWrapper|
-				ValueRef|
 				Value_Returnable
 			;
 			type Value_Returnable =
@@ -786,7 +789,7 @@ const fs = Deno;//require("fs");
 						this.parent[this.name].set(value);
 					}
 					else this.parent[this.name] = value;
-					return value;
+					return new this.constructor({...this,value})
 				}
 			}
 			class PropertyRef extends PropertyParentPair{//:Value ; used in expressions
@@ -927,15 +930,17 @@ const fs = Deno;//require("fs");
 				},
 				repeat(self:Number,foo):void{
 					for(let i=0;i<self;i++)functionCall(foo,[i]);
-				}
+				},
 			};
 			const defaultFunctions_ObjectValue = {
 				"="():Array{return defualtFunctionsInternal.map(this.array,...arguments)},
 				">"():Value{return defualtFunctionsInternal.reduce(this.array,...arguments)},
+				"||":{get(self):Value{return self.array.length}},//length
 			};
 			const defaultFunctions_Array = {
 				"="():Array{return defualtFunctionsInternal.map(this,...arguments)},
 				">"():Value{return defualtFunctionsInternal.reduce(this,...arguments)},
+				"||":{get(self):Value{return self.length}},//length
 			};
 			const defaultFunctions_number = {
 				"<"():Array{return defualtFunctionsInternal.iterate(+this,...arguments)},
@@ -1207,7 +1212,7 @@ const fs = Deno;//require("fs");
 								}],
 								[//comparisons ; `a==b==c` --> `{a==b} && {b==c}`
 									word=>exp.afix == Expression.AfixType.infix &&
-									word.match(/[<>]=?|[!=]==?/),
+									word.match(/^(?:[<>]=?|[!=]==?)$/),
 									()=>{
 										function equality(x:Value_Derefed,y:Value_Derefed){//`a==b`
 											if(x == y)return true;
@@ -1264,19 +1269,36 @@ const fs = Deno;//require("fs");
 												return {value:undefined,args:[arg,arg]};
 											}
 										}
+										loga(exp+"")
 										return handleComparisonChain(exp).value;
 									},
 								],
 								[
+									"++",
+									()=>{
+										assert(!(!!exp.args[0] && !!exp.args[1]),"should not be infix");
+										let arg = exp.args[0] ?? exp.args[1];
+										let afix:u2&Expression.AfixType = exp.afix;
+										assert(!!arg);
+										let property = unwrapValue(evalCode.statement(exp.args[0],context));
+										let value:Number|Value = derefValueFully(property);
+										if(typeof value != "number")value = 0;
+										return match(afix,[
+											[Expression.AfixType.postfix,()=>assignToValue(property,value+1)],
+											[Expression.AfixType.prefix,()=>{assignToValue(property,value+1);return property}],
+										]);
+									}
+								],
+								[
 									word=>exp.afix == Expression.AfixType.prefix &&
-									word.match(/[+\-~!]/),
+									word.match(/^[+\-~!]$/),
 									()=>numericOperator(
 										new Function("_,x",`return ${exp.wordSymbol.word} x`)
 									)
 								],
 								[
 									word=>exp.afix == Expression.AfixType.postfix &&
-									word.match(/[+~!]/),
+									word.match(/^[+~!]$/),
 									()=>numericOperator(
 										new Function("x,_",`return ${exp.wordSymbol.word} x`)
 									)
@@ -1287,7 +1309,7 @@ const fs = Deno;//require("fs");
 									let innerContext = context.new_child();
 									return match(context.contextType,[
 										[[Context.ContextType.default],()=>todo("use argument as #@ in right exp")],
-										[[Context.ContextType.if],()=>{assert.impossible("handled elsewhere")}]
+										[[Context.ContextType.if],()=>{assert.impossibleCase("handled elsewhere")}]
 									]);
 								}],
 								["if",()=>{//`if a => b` or `if a b`
@@ -1382,12 +1404,15 @@ const fs = Deno;//require("fs");
 				return this.assignVariables(parameter_exp,assign,context,true);
 			},
 			assignVariables(parameter_exp:Expression,assign:Expression,context:Context,isDeclaration = false):&mutate<context>{
+				function cannotAssignTo_Value_Derefed(){
+					parameter_exp.wordSymbol.throwError("logic",`in ${["assignment", "declaration"][!!isDeclaration]} pattern: expected name/property, found value '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
+				}
 				return match(parameter_exp.wordSymbol.type,[
 					[SyntaxTree.type.value,()=>{
 						if([SyntaxTree.subtype.string,SyntaxTree.subtype.formatString].includes(parameter_exp.wordSymbol.subtype)){
 							todo("handle strings ; allow for e.g. `'a':b;` and `a.'b'=c;`");
 						}
-						parameter_exp.wordSymbol.throwError("syntax",`in ${["assignment", "declaration"][!!isDeclaration]} pattern: expected name, found value '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
+						cannotAssignTo_Value_Derefed();
 					}],
 					[SyntaxTree.type.label,()=>{//`a:b`
 						let assignValue:Value_Returnable = derefValue(evalCode.statement(assign,context));
@@ -1395,8 +1420,17 @@ const fs = Deno;//require("fs");
 						if(isDeclaration)return context.namespace.declareVariable(name,assignValue);
 						else return context.namespace.assignVariable(name,assignValue);
 					}],
+					[type=>
+						type == SyntaxTree.type.bracket && parameter_exp.args[0] ||//functionCall
+						parameter_exp.wordSymbol.subtype2 == SyntaxTree.subtype2.dot,
+						()=>{
+							let assignValue:Value_Returnable = derefValue(evalCode.statement(assign,context));
+							let parameter = unwrapValue(evalCode.statement(parameter_exp,context));
+							return assignToValue(parameter,assignValue);
+						}
+					],
 					[SyntaxTree.type.bracket,()=>{//''
-						todo.silent("destructure support; ")
+						todo("destructure support; ")
 					}],
 					[SyntaxTree.type.operator,()=>
 						parameter_exp.wordSymbol.throwError("syntax",`in ${["assignment","declaration"][!!isDeclaration]} pattern: expected name, found operator '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
@@ -1503,13 +1537,19 @@ const fs = Deno;//require("fs");
 					return getPropertyData(defaultFunctions_all[name].bind(parent));
 				}
 				if(typeof parent == "number" && Object.hasOwn(defaultFunctions_number,name)){
-					return getPropertyData(defaultFunctions_number[name].bind(parent));
+					if(typeof defaultFunctions_number[name] == "function")
+						return getPropertyData(defaultFunctions_number[name].bind(parent));
+					else return getPropertyData(defaultFunctions_number[name].get(parent));
 				}
 				if(parent instanceof ObjectValue && Object.hasOwn(defaultFunctions_ObjectValue,name)){
-					return getPropertyData(defaultFunctions_ObjectValue[name].bind(parent));
+					if(typeof defaultFunctions_ObjectValue[name] == "function")
+						return getPropertyData(defaultFunctions_ObjectValue[name].bind(parent));
+					else return getPropertyData(defaultFunctions_ObjectValue[name].get(parent));
 				}
 				if(parent instanceof Array && Object.hasOwn(defaultFunctions_Array,name)){
-					return getPropertyData(defaultFunctions_ObjectValue[name].bind(parent));
+					if(typeof defaultFunctions_Array[name] == "function")
+						return getPropertyData(defaultFunctions_Array[name].bind(parent));
+					else return getPropertyData(defaultFunctions_Array[name].get(parent));
 				}
 			}
 			function try_getPropertyData(parent:Value,name:Name|Index,errorWordSymbol?:WordSymbol):Option<PropertyParentPair>{
@@ -1597,7 +1637,7 @@ const fs = Deno;//require("fs");
 					return propertyData;
 				})
 			}
-			function try_getPropertyValueRef(parent:Value,name_value:Value,errorWordSymbol?:WordSymbol):Value{//returns dereferenced value
+			function try_getPropertyValueRef(parent:Value,name_value:Value,errorWordSymbol?:WordSymbol):Option<PropertyRef>{//returns dereferenced value
 				let data = try_getPropertyData(parent,derefValue(name_value),errorWordSymbol);
 				return PropertyRef.new(data);
 			}
@@ -1629,9 +1669,17 @@ const fs = Deno;//require("fs");
 			function try_toArray(value:ObjectValue|Array|Value):Array|Value{
 				return value instanceof ObjectValue?value.array:value;
 			}
+			function assignToValue(parameter:Value_Unwraped|Value,assign:Value,errorWordSymbol?:WordSymbol):Value_Unwraped{
+				assign = derefValue(assign);
+				parameter = unwrapValue(parameter);
+				return match(parameter,[
+					[v=>v instanceof PropertyRef,()=>parameter.set(assign)],
+					[v=>v instanceof ValueRef,()=>parameter.set(assign)],
+				],()=>cannotAssignTo_Value_Derefed());
+			}
 		//----
 		//reference:
-			function unwrapValue(value:Value|ValueWrapper):Value_Returnable{//used at the end of statements
+			function unwrapValue(value:Value|ValueWrapper):Value_Unwraped{//used at the end of statements
 				if(value instanceof ValueWrapper)return value.unwrap();
 				return value;
 			}
@@ -1734,7 +1782,7 @@ function compile(text,throwError,fileName="main file"){
 		parseAST(abstractSyntaxTree);//:mutates rootPattern
 		let value = runAST(abstractSyntaxTree);
 		//assert(abstractSyntaxTree == rootPattern);
-		if(1)console.error(printTree(abstractSyntaxTree));
+		if(0)console.error(printTree(abstractSyntaxTree));
 		console.error(value);
 		return value;
 	}
