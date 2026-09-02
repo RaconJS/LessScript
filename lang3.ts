@@ -771,7 +771,7 @@ const fs = Deno;//require("fs");
 				Function|
 				null
 			);
-			const isSearched = Symbol();
+			const isSearched = Symbol("searched");
 			class PropertyParentPair{//internal class, cannot be returned by an expression
 				constructor(data={}){Object.assign(this,data)}
 				parentValueObject?:ObjectValue;//owner of this.parent used for 'this' in function calls
@@ -970,7 +970,8 @@ const fs = Deno;//require("fs");
 					return try_getPropertyData(this.variables,name);
 				}
 				assignVariable(name:Name,value:Value):Option<Value>{
-					return this.getVariableRef(name,true)?.set?.(value)??null;
+					let propertyData = this.getVariableRef(name,true)?.set?.(value);
+					return propertyData?new PropertyRef(propertyData):null;
 				}
 				declareVariable(name:Name,value?:Value){
 					todo.silent("handle modules");
@@ -1057,7 +1058,16 @@ const fs = Deno;//require("fs");
 							const bracket_exp = exp;
 							void evalCode.forEach_exps(bracket_exp.contence,innerContext,(value,exp)=>{
 								if(!(bracket_exp.wordSymbol.word=="("&&exp.wordSymbol.word==":")){
-									variable.array.push(derefValue(value));//for tuples, pattern `a:b` does not add item
+									if(bracket_exp.wordSymbol.word=="["){
+										let property:Value = value;
+										let valueRef = ValueRef.fromValue(property);
+										assignToValue(property,valueRef,exp);
+										variable.array.push(valueRef);
+									}
+									else{
+										value = derefValue(value);
+										variable.array.push(value);//for tuples, pattern `a:b` does not add item
+									}
 								}
 							});
 							if(isFunctionCall){
@@ -1240,8 +1250,9 @@ const fs = Deno;//require("fs");
 														...getAllowedSymbols(obj)
 													]);
 													if(keys[0].length != keys[1].length)break getBool;
+													keys = new Set([...keys[0],...keys[1]]);
 													for(let keyX of keys){
-														if(!Object.hasOwn(keyX))break getBool;
+														if(!Object.hasOwn(y,keyX))break getBool;
 														if(!equality(x[keyX],y[keyX]))break getBool;
 													}
 													bool = true;
@@ -1269,7 +1280,6 @@ const fs = Deno;//require("fs");
 												return {value:undefined,args:[arg,arg]};
 											}
 										}
-										loga(exp+"")
 										return handleComparisonChain(exp).value;
 									},
 								],
@@ -1675,7 +1685,7 @@ const fs = Deno;//require("fs");
 				return match(parameter,[
 					[v=>v instanceof PropertyRef,()=>parameter.set(assign)],
 					[v=>v instanceof ValueRef,()=>parameter.set(assign)],
-				],()=>cannotAssignTo_Value_Derefed());
+				],()=>todo(parameter));//cannotAssignTo_Value_Derefed());
 			}
 		//----
 		//reference:
