@@ -752,10 +752,12 @@ const fs = Deno;//require("fs");
 			;
 			type Value_Returnable =
 				PropertyRef<isReturnable<true>>|
+				Value_Storable
+			;
+			type Value_Storable = 
 				ValueRef|
 				Value_Derefed
 			;
-			type Value_Storable = Value_Derefed;
 			type Value_Derefed = 
 				ObjectValue|
 				Name|
@@ -784,8 +786,8 @@ const fs = Deno;//require("fs");
 				get(){//: this:Invalid
 					return this.value;
 				}
-				set(value):Value&consumes<this>{//: this:Invalid
-					if(this.parent[this.name] instanceof ValueRef && !(value instanceof ValueRef)){//allows for linked variables
+				set(value,isDeclaration):Value&consumes<this>{//: this:Invalid
+					if(!isDeclaration && this.parent[this.name] instanceof ValueRef && !(value instanceof ValueRef)){//allows for linked variables
 						this.parent[this.name].set(value);
 					}
 					else this.parent[this.name] = value;
@@ -803,7 +805,7 @@ const fs = Deno;//require("fs");
 			}
 			class ValueRef{//value wrapper ; similar to PropertyRef but for shared variables
 				constructor(data={}){Object.assign(this,data);assert(!(this.value instanceof PropertyParentPair),)}
-				value:Value_Storable;
+				value:Value_Derefed;
 				static fromValue(value:Value|ValueRef):ValueRef{
 					value = derefValue(value);
 					if(value instanceof PropertyRef)value = value.value;//BODGED: use a function for (Value)->Value_Derefed|ValueRef
@@ -969,14 +971,15 @@ const fs = Deno;//require("fs");
 				getVariableSelf(name):Option<PropertyParentPair>{
 					return try_getPropertyData(this.variables,name);
 				}
-				assignVariable(name:Name,value:Value):Option<Value>{
-					let propertyData = this.getVariableRef(name,true)?.set?.(value);
+				assignVariable(name:Name,value:Value,isDeclaration:bool=false):Option<Value>{
+					let propertyData = this.getVariableRef(name,isDeclaration)?.set?.(value,true);
+					if(isDeclaration)todo.silent("handle declaration");
 					return propertyData?new PropertyRef(propertyData):null;
 				}
 				declareVariable(name:Name,value?:Value){
 					todo.silent("handle modules");
 					todo.silent("allow `a:(b:2);a.b=4;assert a[0]==a.b`; linking property and tuple index; maybe add a index<-->name' map")
-					return this.assignVariable(name,value??null);
+					return this.assignVariable(name,value??null,true);
 				}
 			}
 			class ModuleObj{
@@ -991,6 +994,7 @@ const fs = Deno;//require("fs");
 		const AllSymbols = Symbol("a.*");
 		const NullSymbol = Symbol("$null");
 		const ObjectAsSymbol = Symbol("$obj");
+		const InvalidValueSymbolErrorError = Symbol("syntax error invalid");
 		const compilerOnlySymbols = [isSearched,ObjectAsSymbol];//symbols that can both be {added to variables} and {that should not be accessable by the language user}
 		const evalCode = {
 			forEach_exps(exps:Expression[],context:Context,forEachFunction?:(value)=>void):Option<Value>{//`...` in `{...}`
@@ -1058,7 +1062,7 @@ const fs = Deno;//require("fs");
 							const bracket_exp = exp;
 							void evalCode.forEach_exps(bracket_exp.contence,innerContext,(value,exp)=>{
 								if(!(bracket_exp.wordSymbol.word=="("&&exp.wordSymbol.word==":")){
-									if(bracket_exp.wordSymbol.word=="["){
+									if(bracket_exp.wordSymbol.word=="["&&exp.wordSymbol.word==":"){
 										let property:Value = value;
 										let valueRef = ValueRef.fromValue(property);
 										assignToValue(property,valueRef,exp);
@@ -1417,6 +1421,7 @@ const fs = Deno;//require("fs");
 				function cannotAssignTo_Value_Derefed(){
 					parameter_exp.wordSymbol.throwError("logic",`in ${["assignment", "declaration"][!!isDeclaration]} pattern: expected name/property, found value '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
 				}
+				const getValue:()=>Value_Returnable = ()=>derefValue(evalCode.statement(assign,context));
 				return match(parameter_exp.wordSymbol.type,[
 					[SyntaxTree.type.value,()=>{
 						if([SyntaxTree.subtype.string,SyntaxTree.subtype.formatString].includes(parameter_exp.wordSymbol.subtype)){
@@ -1425,27 +1430,48 @@ const fs = Deno;//require("fs");
 						cannotAssignTo_Value_Derefed();
 					}],
 					[SyntaxTree.type.label,()=>{//`a:b`
-						let assignValue:Value_Returnable = derefValue(evalCode.statement(assign,context));
+						let assignValue:Value_Returnable = getValue();
 						let name:Name = parameter_exp.wordSymbol.word;
 						if(isDeclaration)return context.namespace.declareVariable(name,assignValue);
 						else return context.namespace.assignVariable(name,assignValue);
 					}],
-					[type=>
+					[type=>//`foo()` or `a.b` in `a.b:c`
 						type == SyntaxTree.type.bracket && parameter_exp.args[0] ||//functionCall
 						parameter_exp.wordSymbol.subtype2 == SyntaxTree.subtype2.dot,
 						()=>{
-							let assignValue:Value_Returnable = derefValue(evalCode.statement(assign,context));
+							let assignValue:Value_Returnable = getValue();
 							let parameter = unwrapValue(evalCode.statement(parameter_exp,context));
 							return assignToValue(parameter,assignValue);
 						}
 					],
 					[SyntaxTree.type.bracket,()=>{//''
-						todo("destructure support; ")
+						parameter_exp.contence.forEach(exp=>match(exp.wordSymbol.word,[
+							[":",()=>{//`(a:b) : c`
+								let innerValue:Value_Returnable = getValue();
+								[name_exp,innerParam_exp] = parameter_exp.args;
+								if(!name_exp)todo("handle `(:b) : ...` pattern")//BODGED
+								let name = evalCode.try_getName(name_exp);
+								if(!!name_exp && name == InvalidValueSymbolError)name.wordSymbol.throwError("syntax","expected name or symbol",e=>Error(e));
+								todo("(a:b):c");
+								//evalCode.assignVariables()
+							}],
+							[()=>exp.wordSymbol.type == SyntaxTree.type.label,//`(a):b` --> `(a:a):b`
+								()=>context.namespace.declareVariable(exp.wordSymbol.name,try_getPropertyData(getValue(),exp.wordSymbol.word,exp))
+							],
+						]))
 					}],
 					[SyntaxTree.type.operator,()=>
 						parameter_exp.wordSymbol.throwError("syntax",`in ${["assignment","declaration"][!!isDeclaration]} pattern: expected name, found operator '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
 					],
 				]);
+			},
+			try_getName(name_exp:Expression<Any|SyntaxTree.type.Label|"$"|"$$">):Name|InvalidValueSymbolError{
+				if(!(
+					name_exp.wordSymbol.type == SyntaxTree.type.label ||
+					name_exp.wordSymbol.word == "$" ||
+					name_exp.wordSymbol.word == "$$"
+				))return InvalidValueSymbolErrorError;
+				return evalCode.getName(name_exp);
 			},
 			getName(name_exp:Expression<SyntaxTree.type.Label|"$"|"$$">):Name{
 				if(name_exp.wordSymbol.type == SyntaxTree.type.label)return name_exp.wordSymbol.word;
@@ -1463,7 +1489,7 @@ const fs = Deno;//require("fs");
 						()=>object[ObjectAsSymbol]??=Symbol(name??object instanceof Array?"[...]":"{...}")
 					],
 				],value);
-			}
+			},
 		};
 		function functionCall(foo:Value|PropertyRef,args:ObjectValue|Value[],self?:ObjectValue|Array|Object,hasSelf = false):Value&(Value_Assignable|Value_Returnable){
 			assert(//args:ObjectValue|Value[]
@@ -1685,7 +1711,7 @@ const fs = Deno;//require("fs");
 				return match(parameter,[
 					[v=>v instanceof PropertyRef,()=>parameter.set(assign)],
 					[v=>v instanceof ValueRef,()=>parameter.set(assign)],
-				],()=>todo(parameter));//cannotAssignTo_Value_Derefed());
+				],()=>todo(loga(0,parameter,assign)));//cannotAssignTo_Value_Derefed());
 			}
 		//----
 		//reference:
@@ -1699,7 +1725,7 @@ const fs = Deno;//require("fs");
 				if(value instanceof ValueWrapper)return value.deref();
 				return value;
 			}
-			function derefValueFully(value:Value|PropertyRef):Value_Storable{//used in numeric operators (e.g. `a` in `a+b`) and function calls (e.g. `foo` in `foo()`)
+			function derefValueFully(value:Value|PropertyRef):Value_Derefed{//used in numeric operators (e.g. `a` in `a+b`) and function calls (e.g. `foo` in `foo()`)
 				if(value instanceof PropertyRef)return value.derefFully();
 				if(value instanceof ValueRef)return value.derefFully();
 				if(value instanceof ValueWrapper)return value.derefFully();

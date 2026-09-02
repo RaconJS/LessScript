@@ -396,3 +396,9 @@ a.b.c.d.e.f;
 {::T:a=exp;};
 foo::T:bar;
 (a:p1;p2;:a)
+{//references update:
+	a:2;
+	b:&a;//linking variables ; same as `Any &a = &b;` in C
+	b = 4;
+	assert a==b;
+};

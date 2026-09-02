@@ -258,7 +258,7 @@ export function parseIntoOperatorSyntaxTree_function(
 					"\\"      :{afix:OperatorData.AfixType.prefix,optionalArg:[0,1]},//function
 					"/"       :{afix:OperatorData.AfixType.prefix,optionalArg:[0,1]},//class
 					"`"       :{afix:OperatorData.AfixType.prefix},
-					"else"    :{afix:OperatorData.AfixType.infix},//'if' else, 'if', 'while', 'match', 'for'
+					"else"    :{afix:OperatorData.AfixType.infix,parameter:OperatorData.right},//'if' else, 'if', 'while', 'match', 'for'
 					"match"   :{afix:OperatorData.AfixType.prefix},
 					"do"      :{afix:OperatorData.AfixType.infix,includes:["while"]},//'while _ => _' or '_ do _ while _ => _'
 					"while"   :{afix:OperatorData.AfixType.prefix,includes:["=>"]},//'while _ => _' or '_ do _ while _ => _'
@@ -596,7 +596,7 @@ export function parseIntoOperatorSyntaxTree_function(
 							return exp?.operatorData?.optionalArg?.[j] || exp?.wordSymbol?.subtype == SyntaxTree.subtype.declaration;
 						}
 						function missingOperatorError(selfExp,argExp,argIndex){
-							if(0)console.error(printTree(exps));
+							if(1)console.error(printTree(exps));
 							selfExp.wordSymbol.throwError("syntax",`operator '${selfExp.wordSymbol}' missing ${["left", "right"][argIndex]} argument`,e=>Error(e));
 						}
 						function handleBracketAfix(exps,i){
@@ -718,8 +718,15 @@ export function parseIntoOperatorSyntaxTree_function(
 									const argExp = tryGetNewAddableArg();
 									exp.args[2] = argExp;
 								}
+								if(exp.wordSymbol.subtype2 == SyntaxTree.subtype2.allowsDoubleExp && exps[i+1]?.wordSymbol?.word == "else" && !exps[i+1].args[0]){
+									const else_exp = exps[i+1];
+									else_exp.args[0] = exps.splice(i,1)[0];//for e.g. `a+if exp=>exp else exp` --> `a+{if exp=>exp else exp}`
+									collectIntoTree(i+1,else_exp.operatorData.proceedence[1],exps,else_exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
+									const argExp = tryGetNewAddableArg();
+									else_exp.args[1] = argExp;
+								}
 								handleDotOperatorRightSideArgument(exps,i);
-								if(exp.wordSymbol.word == "/" && exps[i+1]?.wordSymbol.word == "\\"){//'/(...)\(...)' ; handle classes with constructor functions
+								if(exp.wordSymbol.word == "/" && exps[i+1]?.wordSymbol?.word == "\\"){//'/(...)\(...)' ; handle classes with constructor functions
 									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,isTypeSyntax,isParameter);
 									exp.args[2] = exps.splice(i+1,1)[0];
 								}
@@ -744,7 +751,7 @@ export function parseIntoOperatorSyntaxTree_function(
 									let argExp = exps[i + argIndex];//:+1|-1
 									let hasParam = !!(selfExp.afix & [Expression.AfixType.operatorWithLeftArg,Expression.AfixType.operatorWithRightArg][j]);
 									let hasArg = !!selfExp.args[j];
-									if(!hasParam || selfExp.args[j])return;
+									if(!hasParam || hasArg)return;
 									assert(hasParam && !selfExp.args[j]);
 									if(!argExp){//:return
 										if(hasParam && !hasArg){
