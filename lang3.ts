@@ -2,7 +2,7 @@
 	//1263 build type class for the language's type system
 //name suggetions: quad`.qd` (the Quick Unreadable And Dirty programming language), `.cr` Crunch
 //TODO: add code to support '::=' making '::' have the same syntax as ':'
-const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[@$#]\*|(?:\?&|&\?|\?\||\?!)|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|=>|->|[!=]==|[><!=]=?|>{1,3}|<{1,2}|([+\-*%&|^~])\2?|#(?:\.\.|[#@?/\\])|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:(?:\d|[1-9][_\d]*)(?:\.[_\d]+)?|0[box][_\dA-Fa-f]+(?:\.[_\dA-Fa-f]+)?)\b|!!!|\.\.\.|\.\.=?|\.|\b\w+\b|\S/g;//TODO: add back '#.'
+const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[@$#]\*|(?:\?&|&\?|\|\?|\?!)|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|=>|->|[!=]==|[><!=]=?|>{1,3}|<{1,2}|([+\-*%&|^~])\2?|#(?:\.\.|[#@?/\\])|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:(?:\d|[1-9][_\d]*)(?:\.[_\d]+)?|0[box][_\dA-Fa-f]+(?:\.[_\dA-Fa-f]+)?)\b|!!!|\.\.\.|\.\.=?|\.|\b\w+\b|\S/g;//TODO: add back '#.'
 	//note: float numbers are handed during syntax parting to allow for '3.<' aswell as '3.2'
 	//TODO:handle format strings: need to combine words together when a format string is encountered
 		//currently cannot embed format strings in other format strings
@@ -328,7 +328,7 @@ const fs = Deno;//require("fs");
 					"comparitor",
 					"pipeline",// '|>' '<|' ':>' '<:'
 					"interval",// 'a..b' , 'a..=b'
-					"ternary",// 'a ?& b ?| c' 'b &? a ?| c'
+					"ternary",// 'a ?& b |? c', 'b &? a |? c' for 'if a=>b else c'
 					"declaration",// ':' ; used for ':=' syntaxes
 					"assignment",// '='
 					"typeAnnotation",
@@ -403,7 +403,7 @@ const fs = Deno;//require("fs");
 									//word.match(/^undefined$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.undefined,afix:SyntaxTree.AfixType.nofix} :
 									word.match(/^(?:([+\-*%&|^~])\1?|>{1,3}|<{1,2}|[!\/<>])$/) ? {type:SyntaxTree.type.operator} ://numerical operators
 									word.match(/^([!<>]=?|[!=]?==)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:\?[&|]|[&]\?)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.ternary} ://ternary operators
+									word.match(/^(?:\?&|[&|]\?)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.ternary} ://ternary operators
 									word.match(/^(?:=>|->)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/=$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.assignment} ://e.g. '=' '+='
 									word.match(/^:$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.declaration} :
@@ -1186,7 +1186,7 @@ const fs = Deno;//require("fs");
 							...[//numeric and logical operators:
 								[
 									word=>exp.afix == Expression.AfixType.infix &&
-									word.match(/[+\-*%&|^\/]|>{2,3}|<{2}/),
+									word.match(/^[+\-&|^%\/*]$|\*\*|>{2,3}|<{2}/),
 									()=>numericOperator(
 										new Function("x,y",`return x ${exp.wordSymbol.word} y`)
 									)
@@ -1213,7 +1213,8 @@ const fs = Deno;//require("fs");
 									let y = get_y();
 									let get_x_derefed = ()=>derefValueFully(x);
 									let get_y_derefed = ()=>derefValueFully(y);
-									return !get_x_derefed()?y: !get_y_derefed()?x: false;
+									let value =  !get_x_derefed()?y: !get_y_derefed()?x: false;
+									return new ValueWrapperReturnValue({value,boolReturnValue:x});
 								}],
 								["&&",()=>{//logical and
 									let x;
@@ -1318,6 +1319,32 @@ const fs = Deno;//require("fs");
 									)
 								],
 							],//----
+							...[//ternary operators
+								["&?",()=>{
+									let value = unwrapValue(evalCode.statement(exp.args[0],context));
+									if(!!derefValueFully(value))
+										return new ValueWrapperReturnValue({value:evalCode.statement(exp.args[1],context),boolReturnValue:value});
+									else return new ValueWrapperReturnValue({value:null,boolReturnValue:value});
+								}],
+								["?&",()=>{//python-like reversed if statement`
+									let value = unwrapValue(evalCode.statement(exp.args[1],context));
+									if(!!derefValueFully(value))
+										return new ValueWrapperReturnValue({value:evalCode.statement(exp.args[0],context),boolReturnValue:value});
+									else return new ValueWrapperReturnValue({value,boolReturnValue:value});
+								}],
+								["|?",()=>{//`a&?b|?c` very similar to else but without `#?`
+									let value = evalCode.statement(exp.args[0],context);
+									if(!(value instanceof ValueWrapperReturnValue))
+										exp.wordSymbol.throwError("syntax","missing if statement in pattern 'exp&&exp|?exp'",e=>Error(e))
+									let boolValue:Value = value.boolReturnValue;
+									if(!!derefValueFully(boolValue)){
+										return unwrapValue(value);
+									}
+									else {//else
+										return evalCode.statement(exp.args[1],context);
+									}
+								}],
+							],
 							//keyword operators
 								["=>",()=>{
 									let innerContext = context.new_child();
@@ -1342,11 +1369,11 @@ const fs = Deno;//require("fs");
 									return value;
 								}],
 								["else",()=>{
-									let value = evalCode.statement(exp.args[0],context);//from if statement
+									let value:Value = evalCode.statement(exp.args[0],context);//from if statement
 									if(!(value instanceof ValueWrapper) || !value.statementReturnValue)
 										exp.wordSymbol.throwError("syntax","missing if statement in pattern 'if exp=>exp else exp'",e=>Error(e))
 									let statementReturnValue = value.statementReturnValue;
-									if(!!derefValueFully(value)){
+									if(!!derefValueFully(statementReturnValue)){
 										return unwrapValue(value);
 									}
 									else {//else
@@ -1511,7 +1538,6 @@ const fs = Deno;//require("fs");
 				value = unwrapValue(value);
 				let name:Option<Name,undefined> = value instanceof PropertyRef?value.name:undefined;
 				value = derefValueFully(value);
-				loga(value)
 				return match(value,[
 					[null,()=>NullSymbol],
 					[()=>

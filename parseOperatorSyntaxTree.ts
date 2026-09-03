@@ -240,7 +240,7 @@ export function parseIntoOperatorSyntaxTree_function(
 				{
 					"?&"      :{afix:OperatorData.AfixType.infix},//ternary operator
 					"&?"      :{afix:OperatorData.AfixType.infix},//ternary operator
-					"?|"      :{afix:OperatorData.AfixType.infix},//ternary operator
+					"|?"      :{afix:OperatorData.AfixType.infix},//ternary operator
 				},
 				{
 					":"       :{afix:OperatorData.AfixType.infix,optionalArg:[0,1]},//variable declarator and type operator

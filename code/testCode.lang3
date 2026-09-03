@@ -395,7 +395,8 @@ a.b.c.d.e.f;
 (a.b:2):(a:(b:2));
 {::T:a=exp;};
 foo::T:bar;
-(a:p1;p2;:a)
+(a:p1;p2;:a);
+//designs made due to development of the language interpreter
 {//references update:
 	a:2;
 	b:&a;//linking variables ; same as `Any &a = &b;` in C
@@ -418,4 +419,11 @@ foo::T:bar;
 };
 $$;//static symbol
 getSymbol:\$$;
-assert getSymbol, == getSymbol, ;
+assert getSymbol, == getSymbol,;
+{//`a&?b|?c`
+	//use `|?` instead of `?|`
+		//reasons:
+			//- `|?` cannot be confused with postfix ealy-returning operator `exp?`
+			//- is more consistant with  `|?`+`#?` where `?` goes second
+			//- is may be faster to type since can start typing a `||` but decide to switch to a `|?`
+}
