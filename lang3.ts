@@ -97,7 +97,7 @@ const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u..
 			let _case:MatchCase;
 			tryNext();
 			_case = setOfCases[i];
-			if(!(_case instanceof Array))throw Error(`missing case index '${i}', got '${_case}'`)
+			if(!(_case instanceof Array))throw Error(`missing case at index ${i}, got '${_case}'. May have missed a comma between cases.`)
 			let condition = _case[0];
 			let then = _case[1];
 			let input:V|B = value;
@@ -1133,23 +1133,11 @@ const fs = Deno;//require("fs");
 								}
 								return value;
 							}],
-							[["$$","$"],()=>evalCode.getName(exp,context)],
-							["$$",()=>Symbol("unique `$$`")],
-							["$",()=>{
-								let value = evalCode.statement(exp.args[1],context);
-								let name:Name = value instanceof PropertyRef?value.name:undefined;
-								value = derefValueFully(value);
-								match(value,[
-									[null,()=>NullSymbol],
-									[()=>
-										value instanceof ObjectValue||
-										value instanceof PropertyRef||
-										value instanceof ValueWrapper||
-										!!value && typeof value == Object,
-										()=>object[ObjectAsSymbol]??=Symbol(name??object instanceof Array?"[...]":"{...}")
-									],
-								],value);
+							[",",()=>{//function call
+								todo.silent("handle arguments");
+								return functionCall(evalCode.statement(exp.args[0],context),exp.args[1]?[evalCode.statement(exp.args[1],context)]:[]);
 							}],
+							[["$$","$"],()=>evalCode.getName(exp,context)],
 							["£",()=>{//`a£b` --> `a`
 								const isReverseOrder = exp.isReverseOrder;
 								const evaluationOrder:Expression[2] = isReverseOrder?[exp.args[1],exp.args[0]]:exp.args;
@@ -1368,9 +1356,9 @@ const fs = Deno;//require("fs");
 										return evalCode.statement(exp.args[1],innerContext);
 									}
 								}],
-								["assert",()=>{
-									let value = derefValue(evalCode.statement(exp.args[1],context));
-									if(!value)exp.wordSymbol.throwError("assertion","assertion failed",e=>Error(e))
+								["assert",()=>{//TODO allow `assert exp=>message_exp`
+									let value = evalCode.statement(exp.args[1],context);
+									if(!derefValueFully(value))exp.wordSymbol.throwError("assertion",`assertion failed${value instanceof ValueWrapperReturnValue?`: found '${value.boolReturnValue}'`:""}`,e=>Error(e))
 									return value instanceof ValueWrapperReturnValue?value.boolReturnValue:value;
 								}],
 							//----
@@ -1378,15 +1366,18 @@ const fs = Deno;//require("fs");
 					}],
 				]);
 			},
+			functionCallArguments(args:Value[],context){//`a:>b|>foo(c;d)<:e`
+				todo()
+			},
 			destructureObject(parameter_exp:Expression,argument_exp?:Expression,context):Object&Map<Name,Option<Value>>{
 				return destructureObject_internal(parameter_exp,argument_exp,context);
 			},
-			destructureClassParameters(parameter_exps:Expression[],argument_exps:Value[]|ObjectValue,context):DestructureData{// `a#b#c` in `/a#b#c:...`
+			destructureClassParameters(parameter_exps:Expression[],args:Value[]|ObjectValue,context):DestructureData{// `a#b#c` in `/a#b#c:...`
 				const isClass = true;
-				return evalCode.destructureFunction(parameter_exps,argument_exps,context,isClass);
+				return evalCode.destructureFunction(parameter_exps,args,context,isClass);
 			},
-			destructureFunction(parameter_exps:Expression[],argument_exps:Value[]|ObjectValue,context,isClass:bool = false):DestructureData{
-				type DestructureData = {parameters:Object&Map<Name,Option<Value>>,nextIndex:Index<argument_exps>};
+			destructureFunction(parameter_exps:Expression[],args:Value[]|ObjectValue,context,isClass:bool = false):DestructureData{
+				type DestructureData = {parameters:Object&Map<Name,Option<Value>>,nextIndex:Index<args>};
 				let parameters:Map<Name,Option<Value>> = {};
 				let i = 0;
 				for(let parameter_exp of parameter_exps){
@@ -1401,13 +1392,13 @@ const fs = Deno;//require("fs");
 					isPublicParameter ||= isClass;
 					let parameterName:Option<Name> = isPublicParameter?evalCode.getName(parameterNameExp,context):undefined;
 					if(isClass){
-						let propertyData = try_getPropertyData(argument_exps,parameterName);
+						let propertyData = try_getPropertyData(args,parameterName);
 						if(!propertyData.valueExists)propertyData.set(null);
 						todo.silent("consider handling class parameters separate from function ones")
 						void evalCode.destructureObject_internal(parameter_exp,derefValueFully(propertyData),context,parameters);
 					}
 					else{
-						let argument:Value = isPublicParameter?try_getPropertyValue(argument_exps,parameterName):try_getPropertyValue(argument_exps,i)
+						let argument:Value = isPublicParameter?try_getPropertyValue(args,parameterName):try_getPropertyValue(args,i)
 						void evalCode.destructureObject_internal(parameter_exp,argument,context,parameters);
 					}
 					if(!isPublicParameter)i++;

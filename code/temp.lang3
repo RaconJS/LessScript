@@ -1,8 +1,5 @@
-assert 2 == if 2 #? else 3;
-//(a;b):(a:2;b:3);
-//[1;2;3].>\if #s<#v #? else s;
-assert 5 == if 5>2 #? else #?;
-assert if 5<2 #? else #?;
-a:$$;//static symbol
-foo:\$$;
-assert foo() == foo()
+assert 5>2;
+get2:\2;
+add2:\#+2;
+assert get2, == 2;
+assert add2,3 == 5;
