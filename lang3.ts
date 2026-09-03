@@ -1456,7 +1456,7 @@ const fs = Deno;//require("fs");
 							return assignToValue(parameter,assignValue);
 						}
 					],
-					[SyntaxTree.type.bracket,()=>{//''
+					[SyntaxTree.type.bracket,()=>{//'' ; destructuring
 						parameter_exp.contence.forEach(exp=>match(exp.wordSymbol.word,[
 							[":",()=>{//`(a:b) : c`
 								let innerValue:Value_Returnable = getValue();
@@ -1467,8 +1467,12 @@ const fs = Deno;//require("fs");
 								todo("(a:b):c");
 								//evalCode.assignVariables()
 							}],
-							[()=>exp.wordSymbol.type == SyntaxTree.type.label,//`(a):b` --> `(a:a):b`
-								()=>context.namespace.declareVariable(exp.wordSymbol.name,try_getPropertyData(getValue(),exp.wordSymbol.word,exp))
+							[()=>exp.wordSymbol.type == SyntaxTree.type.label,//`(a;b):b` --> `(a:a;b:b):b`
+								()=>{
+									const name = exp.wordSymbol.word
+									let value = try_getPropertyValue(getValue(),name,exp);
+									return context.namespace.declareVariable(name,value);
+								}
 							],
 						]))
 					}],
