@@ -402,3 +402,20 @@ foo::T:bar;
 	b = 4;
 	assert a==b;
 };
+{//destructuring update:
+	//array destructuring can be used on tuples or arrays and is the only way of indexed items from an object via destructuring.
+	(a;b) : object;
+	//is the same as
+	(a:a;b:b) : object;
+	//is the same as
+	a:object.a;
+	b:object.b;
+
+	[a;b;:c] : object;//array destructuring
+	a:object[0];
+	b:object[1];
+	c:object.c;
+};
+$$;//static symbol
+getSymbol:\$$;
+assert getSymbol, == getSymbol, ;

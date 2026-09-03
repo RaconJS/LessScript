@@ -742,7 +742,7 @@ const fs = Deno;//require("fs");
 				ValueRef|
 				Value_Derefed
 			;
-			type Value_Assignable = 
+			type Value_Assignable =
 				ValueWrapper|
 				Value_Returnable
 			;
@@ -750,15 +750,15 @@ const fs = Deno;//require("fs");
 				PropertyRef|
 				Value_Returnable
 			;
-			type Value_Returnable =
+			type Value_Returnable =//can pass through functions ; is derefed when storing or 
 				PropertyRef<isReturnable<true>>|
 				Value_Storable
 			;
-			type Value_Storable = 
+			type Value_Storable =
 				ValueRef|
 				Value_Derefed
 			;
-			type Value_Derefed = 
+			type Value_Derefed =//used when getting actual value for operators `a+b`
 				ObjectValue|
 				Name|
 				Index|
@@ -822,10 +822,19 @@ const fs = Deno;//require("fs");
 			class ValueWrapper{//for passing extra data between statements
 				constructor(data={}){Object.assign(this,data);}
 				value:Value;
-				statementReturnValue?:{value:Value};//e.g. `a` in `if a=>a else 0` ; used by statements like 'if'/'else' to pass data between them; stores the return value of a statement
 				unwrap(){return unwrapValue(this.value);}
 				deref(){return derefValue(this.value);}
 				derefFully(){return derefValueFully(this.value);}//ignores storable PropertyRefs
+			}
+			class ValueStatementWrapper{
+				constructor(data={}){Object.assign(this,data);}
+				value:Value;
+				statementReturnValue?:{value:Value};//e.g. `a` in `if a=>a else 0` ; used by statements like 'if'/'else' to pass data between them; stores the return value of a statement
+			}
+			class ValueWrapperReturnValue extends ValueWrapper{//returned by `a>b` ; `if 3>2 #?` == 3
+				constructor(data={}){super();Object.assign(this,data);}
+				value:Value;
+				boolReturnValue:Value;
 			}
 			class FunctionObj{
 				constructor(data={}){Object.assign(this,data);}
@@ -845,7 +854,7 @@ const fs = Deno;//require("fs");
 
 			}
 			class Context{
-				static ContextType = EnumSymbols("default","if","match","case");
+				static ContextType = EnumSymbols("default","if","else","match","case");
 				static ParameterSymbol = EnumSymbols("#@","#?","#!","##","#/","#\\","#..");
 				namespace:Namespace = new Namespace();
 				module:&Module;
@@ -854,7 +863,9 @@ const fs = Deno;//require("fs");
 				functionInstance?:&ObjectValue|Object;//points to the function instance; used for decaring `#name`
 				constructor(data={}){Object.assign(this,data)}
 				new_child(data={}){
-					return new Context({...this,...data});
+					let arguments_clone = {};
+					Object.getOwnPropertySymbols(this.arguments).forEach(key=>arguments_clone[key]=[...this.arguments[key]]);
+					return new Context({...this,arguments:arguments_clone,...data});
 				}
 				new_child_namespace(data={},namespaceData={}){
 					return new Context({...this,namespace:new Namespace({parent:this.namespace,...namespaceData}),...data});
@@ -1122,7 +1133,7 @@ const fs = Deno;//require("fs");
 								}
 								return value;
 							}],
-							[["$$","$"],()=>evalCode.getName(exp)],
+							[["$$","$"],()=>evalCode.getName(exp,context)],
 							["$$",()=>Symbol("unique `$$`")],
 							["$",()=>{
 								let value = evalCode.statement(exp.args[1],context);
@@ -1170,7 +1181,7 @@ const fs = Deno;//require("fs");
 										assume(args instanceof Array);
 										let value = args[exp.autoParameterIndex]??null;
 										if(exp.args[1]){
-											let name:Name = evalCode.getName(exp.args[1]);
+											let name:Name = evalCode.getName(exp.args[1],context);
 											if(["##","#"].includes(exp.wordSymbol.word)){
 												let propertyData:PropertyParentPair = try_getPropertyData(context.functionInstance,name);
 												assert(!!propertyData)
@@ -1284,7 +1295,8 @@ const fs = Deno;//require("fs");
 												return {value:undefined,args:[arg,arg]};
 											}
 										}
-										return handleComparisonChain(exp).value;
+										let {value,args} = handleComparisonChain(exp);
+										return new ValueWrapperReturnValue({value,boolReturnValue:args[0]})
 									},
 								],
 								[
@@ -1330,27 +1342,36 @@ const fs = Deno;//require("fs");
 									let innerContext = context.new_child({contextType:Context.ContextType.if});
 									assume(exp.args[1].wordSymbol.word == "=>" || exp.args[2],"e.g. 'if name;' is not defined in the syntax spec")
 									const arrowExpArgs:Expression[2] = exp.args[2]?[exp.args[1],exp.args[2]]:exp.args[1].args;
-									let argument = derefValue(evalCode.statement(arrowExpArgs[0],context));
+									let argument = evalCode.statement(arrowExpArgs[0],innerContext);
+									const bool = derefValueFully(argument);
+									argument = argument instanceof ValueWrapperReturnValue?
+										argument.boolReturnValue:
+										derefValue(argument)
+									;
 									innerContext.add_parameterSymbols({[Context.ParameterSymbol["#?"]]:[argument]});
-									let value =argument? unwrapValue(evalCode.statement(arrowExpArgs[1],context)):null;
+									let value = bool? unwrapValue(evalCode.statement(arrowExpArgs[1],innerContext)):null;
 									value = new ValueWrapper({value,statementReturnValue:{value:argument}});
 									return value;
 								}],
 								["else",()=>{
 									let value = evalCode.statement(exp.args[0],context);//from if statement
 									if(!(value instanceof ValueWrapper) || !value.statementReturnValue)
-										exp.wordSymbol.throwError("syntax","missing if statement",e=>Error(e))
+										exp.wordSymbol.throwError("syntax","missing if statement in pattern 'if exp=>exp else exp'",e=>Error(e))
 									let statementReturnValue = value.statementReturnValue;
-									if(statementReturnValue.value){
-										return value;
+									if(!!derefValueFully(value)){
+										return unwrapValue(value);
 									}
 									else {//else
-										return evalCode.statement(exp.args[1],context);
+										let innerContext = context.new_child({contextType:Context.ContextType.else});
+										const argument = value.statementReturnValue.value;
+										innerContext.add_parameterSymbols({[Context.ParameterSymbol["#?"]]:[argument]});
+										return evalCode.statement(exp.args[1],innerContext);
 									}
 								}],
 								["assert",()=>{
 									let value = derefValue(evalCode.statement(exp.args[1],context));
 									if(!value)exp.wordSymbol.throwError("assertion","assertion failed",e=>Error(e))
+									return value instanceof ValueWrapperReturnValue?value.boolReturnValue:value;
 								}],
 							//----
 						],);//()=>todo.silent()
@@ -1378,7 +1399,7 @@ const fs = Deno;//require("fs");
 						:parameter_exp
 					;
 					isPublicParameter ||= isClass;
-					let parameterName:Option<Name> = isPublicParameter?evalCode.getName(parameterNameExp):undefined;
+					let parameterName:Option<Name> = isPublicParameter?evalCode.getName(parameterNameExp,context):undefined;
 					if(isClass){
 						let propertyData = try_getPropertyData(argument_exps,parameterName);
 						if(!propertyData.valueExists)propertyData.set(null);
@@ -1450,7 +1471,7 @@ const fs = Deno;//require("fs");
 								let innerValue:Value_Returnable = getValue();
 								[name_exp,innerParam_exp] = parameter_exp.args;
 								if(!name_exp)todo("handle `(:b) : ...` pattern")//BODGED
-								let name = evalCode.try_getName(name_exp);
+								let name = evalCode.try_getName(name_exp,context);
 								if(!!name_exp && name == InvalidValueSymbolError)name.wordSymbol.throwError("syntax","expected name or symbol",e=>Error(e));
 								todo("(a:b):c");
 								//evalCode.assignVariables()
@@ -1465,30 +1486,34 @@ const fs = Deno;//require("fs");
 					],
 				]);
 			},
-			try_getName(name_exp:Expression<Any|SyntaxTree.type.Label|"$"|"$$">):Name|InvalidValueSymbolError{
+			try_getName(name_exp:Expression<Any|SyntaxTree.type.Label|"$"|"$$">,context):Name|InvalidValueSymbolError{
 				if(!(
 					name_exp.wordSymbol.type == SyntaxTree.type.label ||
 					name_exp.wordSymbol.word == "$" ||
 					name_exp.wordSymbol.word == "$$"
 				))return InvalidValueSymbolErrorError;
-				return evalCode.getName(name_exp);
+				return evalCode.getName(name_exp,context);
 			},
-			getName(name_exp:Expression<SyntaxTree.type.Label|"$"|"$$">):Name{
+			getName(name_exp:Expression<SyntaxTree.type.Label|"$"|"$$">,context):Name{
 				if(name_exp.wordSymbol.type == SyntaxTree.type.label)return name_exp.wordSymbol.word;
-				if(name_exp.wordSymbol.word == "$$")return Symbol("unique `$$`");
-				assert(name_exp.wordSymbol.word == "$",name_exp)
-				let value = evalCode.statement(exp.args[1],context);
-				let name:Name = value instanceof PropertyRef?value.name:undefined;
+				if(name_exp.wordSymbol.word == "$$"){
+					return name_exp.symbol ??= Symbol(`$$ ; static symbol`);
+				}
+				assert(name_exp.wordSymbol.word == "$",name_exp);
+				let value = evalCode.statement(name_exp.args[1],context);
+				value = unwrapValue(value);
+				let name:Option<Name,undefined> = value instanceof PropertyRef?value.name:undefined;
 				value = derefValueFully(value);
+				loga(value)
 				return match(value,[
 					[null,()=>NullSymbol],
 					[()=>
 						value instanceof ObjectValue||
 						value instanceof PropertyRef||
 						!!value && typeof value == Object,
-						()=>object[ObjectAsSymbol]??=Symbol(name??object instanceof Array?"[...]":"{...}")
+						()=>value[ObjectAsSymbol]??=Symbol(name!==undefined?"$"+name:object instanceof Array?"[...]":"{...}")
 					],
-				],value);
+				],()=>value);
 			},
 		};
 		function functionCall(foo:Value|PropertyRef,args:ObjectValue|Value[],self?:ObjectValue|Array|Object,hasSelf = false):Value&(Value_Assignable|Value_Returnable){
@@ -1715,7 +1740,7 @@ const fs = Deno;//require("fs");
 			}
 		//----
 		//reference:
-			function unwrapValue(value:Value|ValueWrapper):Value_Unwraped{//used at the end of statements
+			function unwrapValue(value:Value|ValueWrapper):Value_Unwraped{//used at the end of statements e.g. after `else` in `if _ _ else _`
 				if(value instanceof ValueWrapper)return value.unwrap();
 				return value;
 			}
