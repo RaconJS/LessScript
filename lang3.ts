@@ -1429,11 +1429,23 @@ const fs = Deno;//require("fs");
 			declareVariables(parameter_exp:Expression,assign:Expression,context:Context):&mutate<context>{
 				return this.assignVariables(parameter_exp,assign,context,true);
 			},
-			assignVariables(parameter_exp:Expression,assign:Expression,context:Context,isDeclaration = false):&mutate<context>{
+			assignVariables(parameter_exp:Expression|undefined,assign:Expression,context:Context,isDeclaration = false):&mutate<context>{
 				function cannotAssignTo_Value_Derefed(){
 					parameter_exp.wordSymbol.throwError("logic",`in ${["assignment", "declaration"][!!isDeclaration]} pattern: expected name/property, found value '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
 				}
 				const getValue:()=>Value_Returnable = ()=>derefValue(evalCode.statement(assign,context));
+				if(!parameter_exp){//`:a` --> `a:a;`
+					type Other = Unknown;
+					let value:PropertyRef|Value_Returnable = evalCode.statement(assign,context);
+					if(!(value instanceof PropertyRef)){
+						assign.wordSymbol.throwError("syntax-property",`Invalid auto ${["assignment '=a;'","declaration ':a'"][+isDeclaration]} pattern can only auto-assign values from a property.`,e=>Error(e));
+					}
+					let propertyName = value.name;
+					const assignableValue = derefValue(value);
+					if(isDeclaration)return context.namespace.declareVariable(propertyName,assignableValue);
+					else return context.namespace.assignVariable(propertyName,assignableValue);
+				}
+				assert(parameter_exp instanceof Expression);
 				return match(parameter_exp.wordSymbol.type,[
 					[SyntaxTree.type.value,()=>{
 						if([SyntaxTree.subtype.string,SyntaxTree.subtype.formatString].includes(parameter_exp.wordSymbol.subtype)){
@@ -1469,7 +1481,7 @@ const fs = Deno;//require("fs");
 							}],
 							[()=>exp.wordSymbol.type == SyntaxTree.type.label,//`(a;b):b` --> `(a:a;b:b):b`
 								()=>{
-									const name = exp.wordSymbol.word
+									const name = exp.wordSymbol.word;
 									let value = try_getPropertyValue(getValue(),name,exp);
 									return context.namespace.declareVariable(name,value);
 								}
