@@ -1,6 +1,7 @@
-(a;b):(a:2;b:3);
-assert a == 2 && b == 3;
-assert (:a;:b) == (a:2;b:3);
-c:{(a;b):(a:2;b:3)}
-if a=>b else c;
-1&?b|?c
+isPointInRectangle:\[rect;point]:
+	rect[0][0]<=point[0]<=rect[0][1] &&
+	rect[1][0]<=point[1]<=rect[1][1]
+;
+assert isPointInRectangle([[0;10];[0;10]];[10;8]);
+assert !isPointInRectangle([[0;10];[0;10]];[10;11]);
+assert !isPointInRectangle([[0;10];[0;10]];[-10;11]);

@@ -800,7 +800,12 @@ const fs = Deno;//require("fs");
 				static new(data:Option<PropertyParentPair>):Option<PropertyRef>{
 					return data && new PropertyRef(data);
 				}
-				deref(){return this.isReturnable?this:this.get();}
+				deref(){
+					if(this.isReturnable){
+						return new PropertyRef({...this,isReturnable:false});
+					}
+					else return this.get();
+				}
 				derefFully(){return derefValueFully(this.get());}//ignores storable PropertyRefs
 			}
 			class ValueRef{//value wrapper ; similar to PropertyRef but for shared variables
@@ -1007,6 +1012,9 @@ const fs = Deno;//require("fs");
 		const ObjectAsSymbol = Symbol("$obj");
 		const InvalidValueSymbolErrorError = Symbol("syntax error invalid");
 		const compilerOnlySymbols = [isSearched,ObjectAsSymbol];//symbols that can both be {added to variables} and {that should not be accessable by the language user}
+		const ErrorSettings = {
+			allowPropertyOfUndefined:true,
+		};
 		const evalCode = {
 			forEach_exps(exps:Expression[],context:Context,forEachFunction?:(value)=>void):Option<Value>{//`...` in `{...}`
 				let lastValue;
@@ -1072,17 +1080,22 @@ const fs = Deno;//require("fs");
 							let innerContext = context.new_child_namespace({},{variables:variable});
 							const bracket_exp = exp;
 							void evalCode.forEach_exps(bracket_exp.contence,innerContext,(value,exp)=>{
-								if(!(bracket_exp.wordSymbol.word=="("&&exp.wordSymbol.word==":")){
+								if(!(bracket_exp.wordSymbol.word=="("&&exp.wordSymbol.word==":")){//for tuples, pattern `a:b` does not add item
+									let valueToPush:Value_Storable;
 									if(bracket_exp.wordSymbol.word=="["&&exp.wordSymbol.word==":"){
 										let property:Value = value;
 										let valueRef = ValueRef.fromValue(property);
 										assignToValue(property,valueRef,exp);
-										variable.array.push(valueRef);
+										valueToPush = valueRef;
 									}
 									else{
-										value = derefValue(value);
-										variable.array.push(value);//for tuples, pattern `a:b` does not add item
+										valueToPush = derefValueToStorable(value);
 									}
+									match(Object.getPrototypeOf(variable).constructor,[
+										[()=>ObjectValue,()=>variable.array.push(valueToPush)],
+										[()=>Array,()=>variable.push(valueToPush)],
+										[()=>Object,()=>todo()],
+									])
 								}
 							});
 							if(isFunctionCall){
@@ -1123,8 +1136,8 @@ const fs = Deno;//require("fs");
 									exp.args[1].wordSymbol.word:
 									derefValue(evalCode.statement(exp.args[1],context))
 								;
-								if(parent == null){//TODO:silent this error
-									exp.wordSymbol.throwError("null",`unable to get properties on '${parent}'`,e=>Error(e));
+								if(parent == null){
+									if(!ErrorSettings.allowPropertyOfUndefined)exp.wordSymbol.throwError("null",`unable to get properties on '${parent}'`,e=>Error(e));
 								}
 								value = try_getPropertyValueRef(parent,propertyNameValue);
 								if(!!exp.args[2]){//`array.= \exp`
@@ -1218,11 +1231,11 @@ const fs = Deno;//require("fs");
 								}],
 								["&&",()=>{//logical and
 									let x;
-									return derefValueFully(x = get_x())?x:get_y();
+									return !derefValueFully(x = get_x())?x:get_y();
 								}],
 								["||",()=>{//logical or
 									let x;
-									return !derefValueFully(x = get_x())?x:get_y();
+									return derefValueFully(x = get_x())?x:get_y();
 								}],
 								[//comparisons ; `a==b==c` --> `{a==b} && {b==c}`
 									word=>exp.afix == Expression.AfixType.infix &&
@@ -1267,21 +1280,24 @@ const fs = Deno;//require("fs");
 											delete y[isSearched];
 											return bool ?? false;
 										};
-										function handleComparisonChain(exp):{value:Value&bool,args:Value[2]}{
+										function handleComparisonChain(exp):{value:Value&bool,args:Value[2],isSingleArg:bool}{
 											if(exp.afix == Expression.AfixType.infix && exp.wordSymbol.word.match(/[<>]=?|[!=]==?/)){
 												const foo:(x,y)=>bool = 
 													exp.wordSymbol.word == "=="?equality:
 													exp.wordSymbol.word == "!="?(x,y)=>!equality(x,y):
 													new Function("x,y",`return x ${exp.wordSymbol.word} y`)
 												;
+												let arg0 = handleComparisonChain(exp.args[0]);
+												if(!arg0.isSingleArg && !arg0.value)return arg0;//implements `&&` ; `a>b>c` --> `a>b&&b>c`
+												let arg1 = handleComparisonChain(exp.args[1]);
 												let args:Value_Returnable[] = [
-													derefValueFully(handleComparisonChain(exp.args[0]).args[1]),
-													derefValueFully(handleComparisonChain(exp.args[1]).args[0]),
+													derefValueFully(arg0.args[1]),
+													derefValueFully(arg1.args[0]),
 												];
 												return {value:foo(args[0],args[1]),args};
 											}else{
 												let arg = evalCode.statement(exp,context);
-												return {value:undefined,args:[arg,arg]};
+												return {value:undefined,args:[arg,arg],isSingleArg:true};
 											}
 										}
 										let {value,args} = handleComparisonChain(exp);
@@ -1595,7 +1611,7 @@ const fs = Deno;//require("fs");
 					}
 					else{
 						assert(foo.constructor == FunctionObj,foo.constructor);
-						let {parameters,nextIndex} = evalCode.destructureFunction(foo.exp.args[0]?.args??[],args);
+						let {parameters,nextIndex} = evalCode.destructureFunction(foo.exp.args[0]?.args??[],args,foo.context);//BODGED: should use the inner context instead of `foo.constext`
 						let extraArguments = try_toArray(args).slice(nextIndex);
 						assume(args instanceof ObjectValue || args instanceof Array);{
 							assert(extraArguments instanceof Array);
@@ -1782,6 +1798,14 @@ const fs = Deno;//require("fs");
 				if(value instanceof ValueRef)return value.deref();
 				if(value instanceof ValueWrapper)return value.deref();
 				return value;
+			}
+			function derefValueToStorable(value:Value|PropertyRef):Value_Storable{
+				value = derefValue(value);//:Value_Returnable&(Value_Storable|PropertyRef<isReturnable=true>)
+				if(value instanceof PropertyRef && value.isReturnable){
+					return value.get();
+				}
+				return value;
+				
 			}
 			function derefValueFully(value:Value|PropertyRef):Value_Derefed{//used in numeric operators (e.g. `a` in `a+b`) and function calls (e.g. `foo` in `foo()`)
 				if(value instanceof PropertyRef)return value.derefFully();
