@@ -1,7 +1,18 @@
-isPointInRectangle:\[rect;point]:
-	rect[0][0]<=point[0]<=rect[0][1] &&
-	rect[1][0]<=point[1]<=rect[1][1]
-;
-assert isPointInRectangle([[0;10];[0;10]];[10;8]);
-assert !isPointInRectangle([[0;10];[0;10]];[10;11]);
-assert !isPointInRectangle([[0;10];[0;10]];[-10;11]);
+{
+	object : (a:(c:2);b:3);
+	(a:(c);b) : object;
+	assert [b;c] == [3;2];
+}
+{
+	[x;y;z] : [1;2;3];
+	a:\(x;y)#z:[x;y;z];
+	a([x:11;y:22];33);
+}
+{
+	a:2;
+	&a;
+	b:&a;
+	c:b;
+	b = 3;
+	assert [a;b;c] == [3;3;2]
+}

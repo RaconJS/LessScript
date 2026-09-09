@@ -1,5 +1,5 @@
 {
-	"shell_cmd": "deno run --allow-read $packages/my-languages/newLang3/lang3.ts \"$file\"",
+	"shell_cmd": "deno run --allow-read $packages/my-languages/newLang3/lang3.ts -f \"$file\"",
 	"selector": "newLang3",
 	"target": "ansi_color_build",
     "syntax": "Packages/ANSIescape/ANSI.sublime-syntax",
