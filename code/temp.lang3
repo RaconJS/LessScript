@@ -1,9 +1,9 @@
-\{answer:{r()*10|0}+1;
-number:prompt("guess number 1-10");
-if number>answer => log(#? + " is too high")
-else if number<answer => log(#?+" is too low")
-else log("correct!");//£assert number == 5
-+number;
-r,+2
-}
-if 0 1 else 2
+//deno --allow-read lang3.ts code/temp.lang3
+answer:{r()*10|0}+1;
+3.=\{
+	number:answer;//prompt("guess number 1-10");
+	if number>answer log(#? + " is too high")
+	else if number<answer log(#?+" is too low")
+	else log("correct!");//£assert number == 5
+};
+log("answer was: " + answer); 

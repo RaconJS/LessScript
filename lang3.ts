@@ -1430,11 +1430,12 @@ const fs = Deno;//require("fs");
 									return value;
 								}],
 								["else",()=>{
-									let value:Value = evalCode.statement(exp.args[0],context);//from if statement
+									let value:ValueWrapper<{statementReturnValue}>|Value = evalCode.statement(exp.args[0],context);//from if statement
 									if(!(value instanceof ValueWrapper) || !value.statementReturnValue)
 										exp.wordSymbol.throwError("syntax","missing if statement in pattern 'if exp=>exp else exp'",e=>Error(e))
+									let boolValue:Value = value.value;
 									let statementReturnValue:Value = value.statementReturnValue.value;
-									if(!!derefValueFully(statementReturnValue)){
+									if(!!derefValueFully(boolValue)){
 										return unwrapValue(value);
 									}
 									else {//else
