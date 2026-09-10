@@ -92,14 +92,14 @@ export function parseIntoOperatorSyntaxTree_function(
 					"$$"      :{afix:OperatorData.AfixType.nofix},
 					"$"       :{afix:OperatorData.AfixType.nofix},
 					"#"       :{afix:OperatorData.AfixType.nofix,useIfNextWordCanHaveLeftArgument:true},
-					"##"      :{afix:OperatorData.AfixType.nofix},
-					"#@"      :{afix:OperatorData.AfixType.nofix},
-					"#?"      :{afix:OperatorData.AfixType.nofix},
-					"#!"      :{afix:OperatorData.AfixType.nofix},
-					"#."      :{afix:OperatorData.AfixType.nofix},
-					"#/"      :{afix:OperatorData.AfixType.nofix},
-					"#\\"     :{afix:OperatorData.AfixType.nofix},
-					"#.."     :{afix:OperatorData.AfixType.nofix},
+					"##"      :{afix:OperatorData.AfixType.nofix,useIfNextWordCanHaveLeftArgument:true},
+					"#@"      :{afix:OperatorData.AfixType.nofix,useIfNextWordCanHaveLeftArgument:true},
+					"#?"      :{afix:OperatorData.AfixType.nofix,useIfNextWordCanHaveLeftArgument:true},
+					"#!"      :{afix:OperatorData.AfixType.nofix,useIfNextWordCanHaveLeftArgument:true},
+					"#."      :{afix:OperatorData.AfixType.nofix,useIfNextWordCanHaveLeftArgument:true},
+					"#/"      :{afix:OperatorData.AfixType.nofix,useIfNextWordCanHaveLeftArgument:true},
+					"#\\"     :{afix:OperatorData.AfixType.nofix,useIfNextWordCanHaveLeftArgument:true},
+					"#.."     :{afix:OperatorData.AfixType.nofix,useIfNextWordCanHaveLeftArgument:true},
 					":"       :{afix:OperatorData.AfixType.nofix},
 					"::"      :{afix:OperatorData.AfixType.nofix},
 					"{"       :{afix:OperatorData.AfixType.nofix},
@@ -128,7 +128,7 @@ export function parseIntoOperatorSyntaxTree_function(
 				},
 				{
 					","       :{afix:OperatorData.AfixType.infix,optionalArg:[0,1],isInverseBracketing:true},
-					",\x00"   :{afix:OperatorData.AfixType.postfix},
+					",\x00"   :{afix:OperatorData.AfixType.postfix,useIfNextWordCanHaveLeftArgument:true},
 					":>"      :{afix:OperatorData.AfixType.infix},
 					"<:"      :{afix:OperatorData.AfixType.infix},
 					"|>"      :{afix:OperatorData.AfixType.infix},
@@ -496,7 +496,7 @@ export function parseIntoOperatorSyntaxTree_function(
 									!hasArg(words[i+1]) ||
 									words[i+1]?.type == SyntaxTree.type.operator &&
 									(//if words[i+1]'s left argument cannot be removed
-										possibleAfixes.nofix?.useIfNextWordCanHaveLeftArgument && (
+										(possibleAfixes.nofix?.useIfNextWordCanHaveLeftArgument || possibleAfixes.postfix?.useIfNextWordCanHaveLeftArgument) && (
 											operatorProceedence[words[i+1]].postfix || operatorProceedence[words[i+1]].infix
 										)
 										|| !operatorProceedence[words[i+1]].prefix && !operatorProceedence[words[i+1]].nofix &&

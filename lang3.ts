@@ -722,6 +722,23 @@ const fs = Deno;//require("fs");
 		Object.assign(Array.prototype,{
 			call(index){return this[arg]},
 		})
+		for(let i of [
+			"E" , "LN10" , "LN2" , "LOG10E" , "LOG2E" , "PI" , "SQRT1_2" , "SQRT2" , "TAU" , "abs" , "acos" , "acosh" , "asin" , "asinh" , "atan" , "atan2" , "atanh" , "cbrt" , "ceil" , "clz32" , "cos" , "cosh" , "exp" , "expm1" , "floor" , "fround" , "hypot" , "imul" , "log" , "log10" , "log1p" , "log2" , "max" , "min" , "pow" , "random" , "round" , "sign" , "sin" , "sinh" , "sqrt" , "tan" , "tanh" , "tau" , "trunc"	
+		]){
+			if(typeof Math[i] == "function"){
+				if(Math[i].length == 1)
+					Object.defineProperty(Number.prototype,i,{
+						get(){return Math[i](this)},
+						enumerable: false,
+						configurable: true,
+					});
+				else
+					Number.prototype[i] = function(...args){
+						return Math[i](this,...args);
+					};
+			}
+			globalThis[i] = Math[i];//Object.assign(window,Math);
+		}
 	}
 	function runAST(rootPattern:Expression[]):Expression[]{
 		const {Expression} = parseIntoOperatorSyntaxTree;
@@ -883,6 +900,16 @@ const fs = Deno;//require("fs");
 						namespace:new Namespace({variables:{
 							inspect:(value,javascript_string)=>new Function("v,value",`return ${javascript_string}`)(value,value),
 							r:Math.random,
+							l(v){console.log(...arguments);return v},
+							log(v){console.log(...arguments);return v},
+							...{
+								prompt,
+								confirm,
+								Deno,
+								global,
+								globalThis,
+								Math
+							},
 						}}),
 					});
 				}
@@ -923,6 +950,15 @@ const fs = Deno;//require("fs");
 						[()=>value instanceof Array,()=>new ObjectValue({array:value})],
 						[()=>Object.getPrototypeOf(value) == Object.prototype,()=>new ObjectValue({properties:value})],
 					]);
+				}
+				toJS(){
+					return this.isArrayType?this.toJSArray():this.toJSObject;
+				}
+				toJSObject():&Object{
+					return this.properties;
+				}
+				toJSArray():&Array{
+					return this.array;
 				}
 			}
 			const defualtFunctionsInternal = {
@@ -1618,6 +1654,8 @@ const fs = Deno;//require("fs");
 			let value:Value_Assignable&Value = match(foo,[
 				[_=>typeof foo == "function",()=>{
 					let argsArray:Array = try_toArray(args)??[];
+					assert(argsArray instanceof Array,"the input type of args:ObjectValue|Value[] should ensure this");
+					argsArray = argsArray.map(v=>toJSValue(v));
 					return foo(...argsArray);//TODO: handle methods with 'this' better
 				}],
 				[_=>foo instanceof FunctionObj, ()=>{
@@ -1736,7 +1774,7 @@ const fs = Deno;//require("fs");
 								});
 								break getData;
 							}
-							else if(Object.hasOwn(parent.properties,name)){
+							if(Object.hasOwn(parent.properties,name)){
 								data = new PropertyDataInternal({
 									parent:parent.properties,
 									name,
@@ -1745,7 +1783,7 @@ const fs = Deno;//require("fs");
 								});
 								break getData;
 							}
-							else if(parent.prototypes){
+							if(parent.prototypes){
 								const asArray:Option<Value[]> = getAsArray(parent.prototypes);
 								const asObject:Option<Object> = valueToPropertiesObject(parent.prototypes);
 								if(asArray){
@@ -1869,8 +1907,23 @@ const fs = Deno;//require("fs");
 			function getAllowedSymbols(object){
 				return Object.getOwnPropertySymbols(object).filter(symbol=>!compilerOnlySymbols.includes(symbol));
 			}
+			function toJSValue(value:Value):Value_Javascript{
+				let name;
+				value = unwrapValue(value);
+				if(value instanceof PropertyRef)name = value.name;
+				value = derefValueFully(value);
+				return match(value,[
+					[()=>value instanceof ObjectValue,()=>value.toJS()],
+					[value instanceof FunctionObj || value instanceof ClassObj,()=>
+						({
+							[name](){return functionCall(value,arguments)},
+						}[name])
+					],
+				],()=>value);
+			}
 		//----
-		return evalCode.forEach_exps(rootPattern,Context.new_root());
+		let value = evalCode.forEach_exps(rootPattern,Context.new_root());
+		return {value,valueInternal:derefValueFully(value)};
 	}
 //----
 	//for each in tree
@@ -1949,7 +2002,7 @@ function compile(text,throwError,fileName="main file"){
 		const rootPattern:RootPattern&WordSymbol = new RootPattern({contence:syntaxTree});
 		const abstractSyntaxTree:Expression[] = parseIntoOperatorSyntaxTree(rootPattern);//:mutates rootPattern
 		parseAST(abstractSyntaxTree);//:mutates rootPattern
-		let value = runAST(abstractSyntaxTree);
+		let {value,valueInternal} = runAST(abstractSyntaxTree);
 		//assert(abstractSyntaxTree == rootPattern);
 		if(0)console.error(printTree(abstractSyntaxTree));
 		console.error(value);

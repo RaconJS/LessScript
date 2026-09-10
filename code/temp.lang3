@@ -1,18 +1,7 @@
-{
-	object : (a:(c:2);b:3);
-	(a:(c);b) : object;
-	assert [b;c] == [3;2];
-}
-{
-	[x;y;z] : [1;2;3];
-	a:\(x;y)#z:[x;y;z];
-	a([x:11;y:22];33);
-}
-{
-	a:2;
-	&a;
-	b:&a;
-	c:b;
-	b = 3;
-	assert [a;b;c] == [3;3;2]
-}
+answer:{r()*10|0}+1;
+number:prompt("guess number 1-10");
+if number>answer => log(#? + " is too high")
+else if number<answer => log(#?+" is too low")
+else log("correct!");//£assert number == 5
++number;
+r,+2
