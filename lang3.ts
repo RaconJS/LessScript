@@ -1433,7 +1433,7 @@ const fs = Deno;//require("fs");
 									let value:Value = evalCode.statement(exp.args[0],context);//from if statement
 									if(!(value instanceof ValueWrapper) || !value.statementReturnValue)
 										exp.wordSymbol.throwError("syntax","missing if statement in pattern 'if exp=>exp else exp'",e=>Error(e))
-									let statementReturnValue = value.statementReturnValue;
+									let statementReturnValue:Value = value.statementReturnValue.value;
 									if(!!derefValueFully(statementReturnValue)){
 										return unwrapValue(value);
 									}
