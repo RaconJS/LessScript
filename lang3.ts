@@ -878,6 +878,11 @@ const fs = Deno;//require("fs");
 			class ParameterData{
 
 			}
+			class Break{
+				constructor(data={}){Object.assign(this,data);}
+				returnValue:Value;//re
+				ownerScopeObject:ObjectValue&Item<Namespace.variables>;//valueObject from namespace representing the scope to return to
+			}
 			class Context{
 				static ContextType = EnumSymbols("default","if","else","match","case");
 				static ParameterSymbol = EnumSymbols("#@","#?","#!","##","#/","#\\","#..");
@@ -1076,384 +1081,419 @@ const fs = Deno;//require("fs");
 			statement(exp:Option<Expression>,context:Context):Value{
 				assert(!!context)
 				if(!exp)return undefined;
-				return match(exp.wordSymbol.type,[
-					[SyntaxTree.type.value,()=>match(exp.wordSymbol.subtype,[
-						[[
-							SyntaxTree.subtype.string,
-							SyntaxTree.subtype.number,
-							SyntaxTree.subtype.bool,
-							SyntaxTree.subtype.object,
-							SyntaxTree.subtype.null,
-						],()=>exp.wordSymbol.value],
-						[SyntaxTree.subtype.formatString,()=>todo("handle format strings")],
-					])],
-					[SyntaxTree.type.label,()=>PropertyRef.new(context.namespace.getVariableRef(exp.wordSymbol.word))],
-					[SyntaxTree.type.bracket,()=>match(exp.wordSymbol.word,[
-						["{",()=>{
-							let i=0;
-							const firstStatement:Option<Expression> = exp.contence[0];
-							const blockExp = exp;
-							let lastStatementToEval:Option<Expression> = null;//executes expression at the end ; `{=last_exp;...}` ; e.g. `{=c;a;b}`
-							const innerContext = context.new_child_namespace();
-							if(!firstStatement?.args?.[0]&&[":", "::", "="].includes(firstStatement?.wordSymbol?.word)){//'{=exp;}'
-								match(firstStatement?.wordSymbol?.word,[
-									["::",()=>{blockExp.typeAnnotation = firstStatement}],
-									[":",()=>{
-										if(":=".includes(firstStatement.args[1]?.wordSymbol?.word)){
-											lastStatementToEval = firstStatement.args[1];
+				let value;
+				try{
+					value = match(exp.wordSymbol.type,[
+						[SyntaxTree.type.value,()=>match(exp.wordSymbol.subtype,[
+							[[
+								SyntaxTree.subtype.string,
+								SyntaxTree.subtype.number,
+								SyntaxTree.subtype.bool,
+								SyntaxTree.subtype.object,
+								SyntaxTree.subtype.null,
+							],()=>exp.wordSymbol.value],
+							[SyntaxTree.subtype.formatString,()=>todo("handle format strings")],
+						])],
+						[SyntaxTree.type.label,()=>PropertyRef.new(context.namespace.getVariableRef(exp.wordSymbol.word))],
+						[SyntaxTree.type.bracket,()=>match(exp.wordSymbol.word,[
+							["{",()=>{
+								let i=0;
+								const firstStatement:Option<Expression> = exp.contence[0];
+								const blockExp = exp;
+								let lastStatementToEval:Option<Expression> = null;//executes expression at the end ; `{=last_exp;...}` ; e.g. `{=c;a;b}`
+								const innerContext = context.new_child_namespace();
+								if(!firstStatement?.args?.[0]&&[":", "::", "="].includes(firstStatement?.wordSymbol?.word)){//'{=exp;}'
+									match(firstStatement?.wordSymbol?.word,[
+										["::",()=>{blockExp.typeAnnotation = firstStatement}],
+										[":",()=>{
+											if(":=".includes(firstStatement.args[1]?.wordSymbol?.word)){
+												lastStatementToEval = firstStatement.args[1];
+											}
+											evalCode.declareVariables_OBSILETE(firstStatement.args[1],undefined,innerContext);
+										}],
+										["=",()=>{
+											lastStatementToEval = firstStatement;
+										}],
+									],()=>{});
+									i+=1;
+								}
+								let lastValue = evalCode.forEach_exps(blockExp.contence,innerContext);
+								if(lastStatementToEval)lastValue = evalCode.statement(lastStatementToEval,innerContext);
+								return lastValue;
+							}],
+							[["[","("],()=>{
+								let functionObj:Option<Value> = undefined;
+								let isFunctionCall = false;
+								if(exp.afix == Expression.AfixType.postfix){//function call
+									isFunctionCall = true;
+									functionObj = evalCode.statement(exp.args[0],context);
+								}
+								let variable = new ObjectValue();
+								let innerContext = context.new_child_namespace({},{variables:variable});
+								const bracket_exp = exp;
+								void evalCode.forEach_exps(bracket_exp.contence,innerContext,(value,exp)=>{
+									if(!(bracket_exp.wordSymbol.word=="("&&exp.wordSymbol.word==":")){//for tuples, pattern `a:b` does not add item
+										let valueToPush:Value_Storable;
+										if(bracket_exp.wordSymbol.word=="["&&exp.wordSymbol.word==":"){
+											let property:Value = value;
+											let valueRef = ValueRef.fromValue(property);
+											assignToValue(property,valueRef,exp);
+											valueToPush = valueRef;
 										}
-										evalCode.declareVariables_OBSILETE(firstStatement.args[1],undefined,innerContext);
-									}],
-									["=",()=>{
-										lastStatementToEval = firstStatement;
-									}],
-								],()=>{});
-								i+=1;
-							}
-							let lastValue = evalCode.forEach_exps(blockExp.contence,innerContext);
-							if(lastStatementToEval)lastValue = evalCode.statement(lastStatementToEval,innerContext);
-							return lastValue;
-						}],
-						[["[","("],()=>{
-							let functionObj:Option<Value> = undefined;
-							let isFunctionCall = false;
-							if(exp.afix == Expression.AfixType.postfix){//function call
-								isFunctionCall = true;
-								functionObj = evalCode.statement(exp.args[0],context);
-							}
-							let variable = new ObjectValue();
-							let innerContext = context.new_child_namespace({},{variables:variable});
-							const bracket_exp = exp;
-							void evalCode.forEach_exps(bracket_exp.contence,innerContext,(value,exp)=>{
-								if(!(bracket_exp.wordSymbol.word=="("&&exp.wordSymbol.word==":")){//for tuples, pattern `a:b` does not add item
-									let valueToPush:Value_Storable;
-									if(bracket_exp.wordSymbol.word=="["&&exp.wordSymbol.word==":"){
-										let property:Value = value;
-										let valueRef = ValueRef.fromValue(property);
-										assignToValue(property,valueRef,exp);
-										valueToPush = valueRef;
-									}
-									else{
-										valueToPush = derefValueToStorable(value);
-									}
-									match(Object.getPrototypeOf(variable).constructor,[
-										[()=>ObjectValue,()=>variable.array.push(valueToPush)],
-										[()=>Array,()=>variable.push(valueToPush)],
-										[()=>Object,()=>todo()],
-									])
-								}
-							});
-							if(isFunctionCall){
-								todo.silent("BODGED; handle pipe operators");
-								return functionCall(functionObj,variable);
-							}
-							return variable;
-						}],
-					])],
-					[SyntaxTree.type.operator,()=>{
-						const args = exp.args;
-						const [x,y] = args;//for numeric operators
-						function numericOperator(foo:(x:Value_Derefed,y:Value_Derefed)=>Value_Derefed):Value_Derefed{
-							return foo(
-								derefValueFully(evalCode.statement(x,context)),
-								derefValueFully(evalCode.statement(y,context)),
-							);
-						}
-						let get_x = ()=>evalCode.statement(exp.args[0],context);
-						let get_y = ()=>evalCode.statement(exp.args[1],context);
-						return match(exp.wordSymbol.word,[
-							["\\",()=>new FunctionObj({exp,context})],//function `\exp`
-							[word=>word=="/"&&exp.afix == Expression.AfixType.prefix,()=>new ClassObj({exp,context})],//class `/exp`
-							[":",()=>{
-								let value = evalCode.declareVariables_OBSILETE(exp.args[0],exp.args[1],context);
-								return value;
-							}],
-							["=",()=>{
-								let assignedValues = evalCode.assignVariables_OBSILETE(exp.args[0],exp.args[1],context);
-								return assignedValues;
-							}],
-							[".",()=>{
-								let parent = derefValue(evalCode.statement(exp.args[0],context));
-								let value;
-								let propertyNameValue:Name|Value;
-								assume(!!exp.args[1]);
-								propertyNameValue = exp.args[1].wordSymbol.type == SyntaxTree.type.label?
-									exp.args[1].wordSymbol.word:
-									derefValue(evalCode.statement(exp.args[1],context))
-								;
-								if(parent == null){
-									if(!ErrorSettings.allowPropertyOfUndefined)exp.wordSymbol.throwError("null",`unable to get properties on '${parent}'`,e=>Error(e));
-								}
-								value = try_getPropertyValueRef(parent,propertyNameValue);
-								if(!!exp.args[2]){//`array.= \exp`
-									let arg = evalCode.statement(exp.args[2],context);
-									value = functionCall(value,[arg],todo.silent("handle methods; get `#.` (i.e. self) from namespace's class instance object"));
-								}
-								return value;
-							}],
-							[",",()=>{//function call
-								todo.silent("handle arguments");
-								return functionCall(evalCode.statement(exp.args[0],context),exp.args[1]?[evalCode.statement(exp.args[1],context)]:[]);
-							}],
-							[["$$","$"],()=>evalCode.getName(exp,context)],
-							["£",()=>{//`a£b` --> `a`
-								const isReverseOrder = exp.isReverseOrder;
-								const evaluationOrder:Expression[2] = isReverseOrder?[exp.args[1],exp.args[0]]:exp.args;
-								const values = evaluationOrder.map(arg_exp=>evalCode.statement(arg_exp,context));
-								return isReverseOrder?values[1]:values[0];
-							}],
-							[word=>word == "&" && exp.afix == Expression.AfixType.postfix,()=>{//'a&' reference
-								let value:Value = evalCode.statement(exp.args[0]??exp.args[1],context);
-								if(value instanceof PropertyRef)value.isReturnable = true;
-								return value;//BODGED
-							}],
-							[word=>word == "&" && exp.afix == Expression.AfixType.prefix,()=>{//'&a' linked property similar to the C code `&int a = &b`
-								let value:Value = evalCode.statement(exp.args[0]??exp.args[1],context);
-								todo.silent("handle `&a` references properly");
-								let valueRef = ValueRef.fromValue(value);
-								if(value instanceof PropertyRef && value != valueRef){//turns variable into a reference if it was not already
-									value.set(valueRef);
-								}
-								return valueRef;//BODGED
-							}],
-							["¬",()=>evalCode.statement(exp.args[0],context)],
-							...[//parameters
-								[()=>exp.wordSymbol.subtype == SyntaxTree.subtype.autoParameter,//`##` `#?` `#@` etc...
-									()=>{
-										const contextParameterSymbol:Context.ParameterSymbol = Context.ParameterSymbol[
-											exp.wordSymbol.word.replace(/^#$/,"##")
-										];
-										const args:Value[] = context.arguments[contextParameterSymbol] ?? [];
-										assume(args instanceof Array);
-										let value = args[exp.autoParameterIndex]??null;
-										if(exp.args[1]){
-											let name:Name = evalCode.getName(exp.args[1],context);
-											if(["##","#"].includes(exp.wordSymbol.word)){
-												let propertyData:PropertyDataInternal = try_getPropertyData(context.functionInstance,name);
-												assert(!!propertyData)
-												propertyData.set(value);
-											}
-											else{
-												context.namespace.declareVariable(name,value);//TODO: do this staticly to work in conditional code
-											}
+										else{
+											valueToPush = derefValueToStorable(value);
 										}
-										return value;
+										match(Object.getPrototypeOf(variable).constructor,[
+											[()=>ObjectValue,()=>variable.array.push(valueToPush)],
+											[()=>Array,()=>variable.push(valueToPush)],
+											[()=>Object,()=>todo()],
+										])
 									}
-								]
-							],
-							...[//numeric and logical operators:
-								[
-									word=>exp.afix == Expression.AfixType.infix &&
-									word.match(/^[+\-&|^%\/*]$|\*\*|>{2,3}|<{2}/),
-									()=>numericOperator(
-										new Function("x,y",`return x ${exp.wordSymbol.word} y`)
-									)
-								],
-								[//nor `a~b` == `{a|b}`
-									word=>exp.afix == Expression.AfixType.infix && word == "~",
-									()=>numericOperator((x,y)=>~(x|y))
-								],
-								["~~",()=>{//logical nor
-										let x = get_x();
-										let y = get_y();
-										[
-											[true,x],//x=0
-											[y,false],//x=1
-										][!derefValueFully(x)][!derefValueFully(y)]
-										//00 1 true
-										//01 0 X
-										//10 0 Y
-										//11 0 false
-									}
-								],
-								["^^",()=>{//logical xor
-									let x = get_x();
-									let y = get_y();
-									let get_x_derefed = ()=>derefValueFully(x);
-									let get_y_derefed = ()=>derefValueFully(y);
-									let value =  !get_x_derefed()?y: !get_y_derefed()?x: false;
-									return new ValueWrapperReturnValue({value,boolReturnValue:x});
-								}],
-								["&&",()=>{//logical and
-									let x;
-									return !derefValueFully(x = get_x())?x:get_y();
-								}],
-								["||",()=>{//logical or
-									let x;
-									return derefValueFully(x = get_x())?x:get_y();
-								}],
-								[//comparisons ; `a==b==c` --> `{a==b} && {b==c}`
-									word=>exp.afix == Expression.AfixType.infix &&
-									word.match(/^(?:[<>]=?|[!=]==?)$/),
-									()=>{
-										function equality(x:Value_Derefed,y:Value_Derefed){//`a==b`
-											if(x == y)return true;
-											if(!(x instanceof Object && y instanceof Object))return false;
-											if(x[isSearched]||y[isSearched])return false;
-											x[isSearched] = true;
-											y[isSearched] = true;
-											let bool = false;getBool:{
-												if(x instanceof ObjectValue && y instanceof ObjectValue){//BODGED
-													bool = equality(x.array,y.array) && equality(x.properties,y.properties);
-													break getBool;
-												}
-												if(x instanceof Array && y instanceof Array){
-													if(x.length != y.length){break getBool;}
-													for(let i=0;i<x.length;i++){
-														if(!(i in x) && !(i in y))continue;//handles gaps in array
-														if(!equality(x[i],y[i]))break getBool;
-													}
-													bool = true;
-													break getBool;
-												}
-												if(x instanceof Object && y instanceof Object){
-													let keys:Name[][2] = [x,y].map(obj=>[
-														...Object.keys(obj),
-														...getAllowedSymbols(obj)
-													]);
-													if(keys[0].length != keys[1].length)break getBool;
-													keys = new Set([...keys[0],...keys[1]]);
-													for(let keyX of keys){
-														if(!Object.hasOwn(y,keyX))break getBool;
-														if(!equality(x[keyX],y[keyX]))break getBool;
-													}
-													bool = true;
-													break getBool;
-												}
-											}
-											delete x[isSearched];
-											delete y[isSearched];
-											return bool ?? false;
-										};
-										function handleComparisonChain(exp):{value:Value&bool,args:Value[2],isSingleArg:bool}{
-											if(exp.afix == Expression.AfixType.infix && exp.wordSymbol.word.match(/[<>]=?|[!=]==?/)){
-												const foo:(x,y)=>bool = 
-													exp.wordSymbol.word == "=="?equality:
-													exp.wordSymbol.word == "!="?(x,y)=>!equality(x,y):
-													new Function("x,y",`return x ${exp.wordSymbol.word} y`)
-												;
-												let arg0 = handleComparisonChain(exp.args[0]);
-												if(!arg0.isSingleArg && !arg0.value)return arg0;//implements `&&` ; `a>b>c` --> `a>b&&b>c`
-												let arg1 = handleComparisonChain(exp.args[1]);
-												let args:Value_Returnable[] = [
-													derefValueFully(arg0.args[1]),
-													derefValueFully(arg1.args[0]),
-												];
-												return {value:foo(args[0],args[1]),args};
-											}else{
-												let arg = evalCode.statement(exp,context);
-												return {value:undefined,args:[arg,arg],isSingleArg:true};
-											}
-										}
-										let {value,args} = handleComparisonChain(exp);
-										return new ValueWrapperReturnValue({value,boolReturnValue:args[0]})
-									},
-								],
-								[
-									"++",
-									()=>{
-										assert(!(!!exp.args[0] && !!exp.args[1]),"should not be infix");
-										let arg = exp.args[0] ?? exp.args[1];
-										let afix:u2&Expression.AfixType = exp.afix;
-										assert(!!arg);
-										let property = unwrapValue(evalCode.statement(exp.args[0],context));
-										let value:Number|Value = derefValueFully(property);
-										if(typeof value != "number")value = 0;
-										return match(afix,[
-											[Expression.AfixType.postfix,()=>assignToValue(property,value+1)],
-											[Expression.AfixType.prefix,()=>{assignToValue(property,value+1);return property}],
-										]);
-									}
-								],
-								[
-									word=>exp.afix == Expression.AfixType.prefix &&
-									word.match(/^[+\-~!]$/),
-									()=>numericOperator(
-										new Function("_,x",`return ${exp.wordSymbol.word} x`)
-									)
-								],
-								[
-									word=>exp.afix == Expression.AfixType.postfix &&
-									word.match(/^[+~!]$/),
-									()=>numericOperator(
-										new Function("x,_",`return ${exp.wordSymbol.word} x`)
-									)
-								],
-							],//----
-							...[//ternary operators
-								["&?",()=>{
-									let value = unwrapValue(evalCode.statement(exp.args[0],context));
-									if(!!derefValueFully(value))
-										return new ValueWrapperReturnValue({value:evalCode.statement(exp.args[1],context),boolReturnValue:value});
-									else return new ValueWrapperReturnValue({value:null,boolReturnValue:value});
-								}],
-								["?&",()=>{//python-like reversed if statement`
-									let value = unwrapValue(evalCode.statement(exp.args[1],context));
-									if(!!derefValueFully(value))
-										return new ValueWrapperReturnValue({value:evalCode.statement(exp.args[0],context),boolReturnValue:value});
-									else return new ValueWrapperReturnValue({value,boolReturnValue:value});
-								}],
-								["|?",()=>{//`a&?b|?c` very similar to else but without `#?`
-									let value = evalCode.statement(exp.args[0],context);
-									if(!(value instanceof ValueWrapperReturnValue))
-										exp.wordSymbol.throwError("syntax","missing if statement in pattern 'exp&&exp|?exp'",e=>Error(e))
-									let boolValue:Value = value.boolReturnValue;
-									if(!!derefValueFully(boolValue)){
-										return unwrapValue(value);
-									}
-									else {//else
-										return evalCode.statement(exp.args[1],context);
-									}
-								}],
-							],
-							//keyword operators
-								["=>",()=>{
-									let innerContext = context.new_child_statement();
-									return match(context.contextType,[
-										[[Context.ContextType.default],()=>todo("use argument as #@ in right exp")],
-										[[Context.ContextType.if],()=>{assert.impossibleCase("handled elsewhere")}]
-									]);
-								}],
-								["if",()=>{//`if a => b` or `if a b`
-									let innerContext = context.new_child_statement({contextType:Context.ContextType.if});
-									assume(exp.args[1].wordSymbol.word == "=>" || exp.args[2],"e.g. 'if name;' is not defined in the syntax spec")
-									const arrowExpArgs:Expression[2] = exp.args[2]?[exp.args[1],exp.args[2]]:exp.args[1].args;
-									let argument = evalCode.statement(arrowExpArgs[0],innerContext);
-									const bool = derefValueFully(argument);
-									argument = argument instanceof ValueWrapperReturnValue?
-										argument.boolReturnValue:
-										derefValue(argument)
-									;
-									innerContext.add_parameterSymbols({[Context.ParameterSymbol["#?"]]:[argument]});
-									let value = bool? unwrapValue(evalCode.statement(arrowExpArgs[1],innerContext)):null;
-									value = new ValueWrapper({value,statementReturnValue:{value:argument}});
+								});
+								if(isFunctionCall){
+									todo.silent("BODGED; handle pipe operators");
+									return functionCall(functionObj,variable);
+								}
+								return variable;
+							}],
+						])],
+						[SyntaxTree.type.operator,()=>{
+							const args = exp.args;
+							const [x,y] = args;//for numeric operators
+							function numericOperator(foo:(x:Value_Derefed,y:Value_Derefed)=>Value_Derefed):Value_Derefed{
+								return foo(
+									derefValueFully(evalCode.statement(x,context)),
+									derefValueFully(evalCode.statement(y,context)),
+								);
+							}
+							let get_x = ()=>evalCode.statement(exp.args[0],context);
+							let get_y = ()=>evalCode.statement(exp.args[1],context);
+							return match(exp.wordSymbol.word,[
+								["\\",()=>new FunctionObj({exp,context})],//function `\exp`
+								[word=>word=="/"&&exp.afix == Expression.AfixType.prefix,()=>new ClassObj({exp,context})],//class `/exp`
+								[":",()=>{
+									let value = evalCode.declareVariables_OBSILETE(exp.args[0],exp.args[1],context);
 									return value;
 								}],
-								["else",()=>{
-									let value:ValueWrapper<{statementReturnValue}>|Value = evalCode.statement(exp.args[0],context);//from if statement
-									if(!(value instanceof ValueWrapper) || !value.statementReturnValue)
-										exp.wordSymbol.throwError("syntax","missing if statement in pattern 'if exp=>exp else exp'",e=>Error(e))
-									let boolValue:Value = value.value;
-									let statementReturnValue:Value = value.statementReturnValue.value;
-									if(!!derefValueFully(boolValue)){
-										return unwrapValue(value);
+								["=",()=>{
+									let assignedValues = evalCode.assignVariables_OBSILETE(exp.args[0],exp.args[1],context);
+									return assignedValues;
+								}],
+								[".",()=>{
+									let parent = derefValue(evalCode.statement(exp.args[0],context));
+									let value;
+									let propertyNameValue:Name|Value;
+									assume(!!exp.args[1]);
+									propertyNameValue = exp.args[1].wordSymbol.type == SyntaxTree.type.label?
+										exp.args[1].wordSymbol.word:
+										derefValue(evalCode.statement(exp.args[1],context))
+									;
+									if(parent == null){
+										if(!ErrorSettings.allowPropertyOfUndefined)exp.wordSymbol.throwError("null",`unable to get properties on '${parent}'`,e=>Error(e));
 									}
-									else {//else
-										let innerContext = context.new_child_statement({contextType:Context.ContextType.else});
-										const argument = value.statementReturnValue.value;
+									value = try_getPropertyValueRef(parent,propertyNameValue);
+									if(!!exp.args[2]){//`array.= \exp`
+										let arg = evalCode.statement(exp.args[2],context);
+										value = functionCall(value,[arg],todo.silent("handle methods; get `#.` (i.e. self) from namespace's class instance object"));
+									}
+									return value;
+								}],
+								[",",()=>{//function call
+									todo.silent("handle arguments");
+									return functionCall(evalCode.statement(exp.args[0],context),exp.args[1]?[evalCode.statement(exp.args[1],context)]:[]);
+								}],
+								[["$$","$"],()=>evalCode.getName(exp,context)],
+								["£",()=>{//`a£b` --> `a`
+									const isReverseOrder = exp.isReverseOrder;
+									const evaluationOrder:Expression[2] = isReverseOrder?[exp.args[1],exp.args[0]]:exp.args;
+									const values = evaluationOrder.map(arg_exp=>evalCode.statement(arg_exp,context));
+									return isReverseOrder?values[1]:values[0];
+								}],
+								[word=>word == "&" && exp.afix == Expression.AfixType.postfix,()=>{//'a&' reference
+									let value:Value = evalCode.statement(exp.args[0]??exp.args[1],context);
+									if(value instanceof PropertyRef)value.isReturnable = true;
+									return value;//BODGED
+								}],
+								[word=>word == "&" && exp.afix == Expression.AfixType.prefix,()=>{//'&a' linked property similar to the C code `&int a = &b`
+									let value:Value = evalCode.statement(exp.args[0]??exp.args[1],context);
+									todo.silent("handle `&a` references properly");
+									let valueRef = ValueRef.fromValue(value);
+									if(value instanceof PropertyRef && value != valueRef){//turns variable into a reference if it was not already
+										value.set(valueRef);
+									}
+									return valueRef;//BODGED
+								}],
+								["¬",()=>evalCode.statement(exp.args[0],context)],
+								["?",()=>{
+									let returnValue = evalCode.statement(exp.args[0],context);
+									let value_for_owner:Value = evalCode.statement(exp.args[1],context)??null;
+									value_for_owner = unwrapValue(value_for_owner);
+									let ownerScopeObject:ObjectValue;
+									if(value_for_owner instanceof PropertyRef){
+										ownerScopeObject = value_for_owner.parent;
+										function checkNamespace(namespace){
+											if(namespace.variables == ownerScopeObject)return namespace;
+											if(!!namespace.parent)return checkNamespace(namespace.parent)
+											return null;
+										}
+										let foundNamespace:Namespace|null = checkNamespace(context.namespace);
+										if(!foundNamespace){
+											exp.args[1].wordSymbol.throwError("return",`variable's owner namespace is not in the current scope. Looking for variable '${value_for_owner.name}' `,e=>Error(e))
+										}
+									}else {
+										if(exp.args[1])
+											exp.args[1].wordSymbol.throwError("return",`expected value belonging to a parent scope. got:'${value_for_owner}'`,e=>Error(e))
+									}
+									throw new Break({
+										returnValue,
+										ownerScopeObject,
+									});
+								}],
+								...[//parameters
+									[()=>exp.wordSymbol.subtype == SyntaxTree.subtype.autoParameter,//`##` `#?` `#@` etc...
+										()=>{
+											const contextParameterSymbol:Context.ParameterSymbol = Context.ParameterSymbol[
+												exp.wordSymbol.word.replace(/^#$/,"##")
+											];
+											const args:Value[] = context.arguments[contextParameterSymbol] ?? [];
+											assume(args instanceof Array);
+											let value = args[exp.autoParameterIndex]??null;
+											if(exp.args[1]){
+												let name:Name = evalCode.getName(exp.args[1],context);
+												if(["##","#"].includes(exp.wordSymbol.word)){
+													let propertyData:PropertyDataInternal = try_getPropertyData(context.functionInstance,name);
+													assert(!!propertyData)
+													propertyData.set(value);
+												}
+												else{
+													context.namespace.declareVariable(name,value);//TODO: do this staticly to work in conditional code
+												}
+											}
+											return value;
+										}
+									]
+								],
+								...[//numeric and logical operators:
+									[
+										word=>exp.afix == Expression.AfixType.infix &&
+										word.match(/^[+\-&|^%\/*]$|\*\*|>{2,3}|<{2}/),
+										()=>numericOperator(
+											new Function("x,y",`return x ${exp.wordSymbol.word} y`)
+										)
+									],
+									[//nor `a~b` == `{a|b}`
+										word=>exp.afix == Expression.AfixType.infix && word == "~",
+										()=>numericOperator((x,y)=>~(x|y))
+									],
+									["~~",()=>{//logical nor
+											let x = get_x();
+											let y = get_y();
+											[
+												[true,x],//x=0
+												[y,false],//x=1
+											][!derefValueFully(x)][!derefValueFully(y)]
+											//00 1 true
+											//01 0 X
+											//10 0 Y
+											//11 0 false
+										}
+									],
+									["^^",()=>{//logical xor
+										let x = get_x();
+										let y = get_y();
+										let get_x_derefed = ()=>derefValueFully(x);
+										let get_y_derefed = ()=>derefValueFully(y);
+										let value =  !get_x_derefed()?y: !get_y_derefed()?x: false;
+										return new ValueWrapperReturnValue({value,boolReturnValue:x});
+									}],
+									["&&",()=>{//logical and
+										let x;
+										return !derefValueFully(x = get_x())?x:get_y();
+									}],
+									["||",()=>{//logical or
+										let x;
+										return derefValueFully(x = get_x())?x:get_y();
+									}],
+									[//comparisons ; `a==b==c` --> `{a==b} && {b==c}`
+										word=>exp.afix == Expression.AfixType.infix &&
+										word.match(/^(?:[<>]=?|[!=]==?)$/),
+										()=>{
+											function equality(x:Value_Derefed,y:Value_Derefed){//`a==b`
+												if(x == y)return true;
+												if(!(x instanceof Object && y instanceof Object))return false;
+												if(x[isSearched]||y[isSearched])return false;
+												x[isSearched] = true;
+												y[isSearched] = true;
+												let bool = false;getBool:{
+													if(x instanceof ObjectValue && y instanceof ObjectValue){//BODGED
+														bool = equality(x.array,y.array) && equality(x.properties,y.properties);
+														break getBool;
+													}
+													if(x instanceof Array && y instanceof Array){
+														if(x.length != y.length){break getBool;}
+														for(let i=0;i<x.length;i++){
+															if(!(i in x) && !(i in y))continue;//handles gaps in array
+															if(!equality(x[i],y[i]))break getBool;
+														}
+														bool = true;
+														break getBool;
+													}
+													if(x instanceof Object && y instanceof Object){
+														let keys:Name[][2] = [x,y].map(obj=>[
+															...Object.keys(obj),
+															...getAllowedSymbols(obj)
+														]);
+														if(keys[0].length != keys[1].length)break getBool;
+														keys = new Set([...keys[0],...keys[1]]);
+														for(let keyX of keys){
+															if(!Object.hasOwn(y,keyX))break getBool;
+															if(!equality(x[keyX],y[keyX]))break getBool;
+														}
+														bool = true;
+														break getBool;
+													}
+												}
+												delete x[isSearched];
+												delete y[isSearched];
+												return bool ?? false;
+											};
+											function handleComparisonChain(exp):{value:Value&bool,args:Value[2],isSingleArg:bool}{
+												if(exp.afix == Expression.AfixType.infix && exp.wordSymbol.word.match(/[<>]=?|[!=]==?/)){
+													const foo:(x,y)=>bool = 
+														exp.wordSymbol.word == "=="?equality:
+														exp.wordSymbol.word == "!="?(x,y)=>!equality(x,y):
+														new Function("x,y",`return x ${exp.wordSymbol.word} y`)
+													;
+													let arg0 = handleComparisonChain(exp.args[0]);
+													if(!arg0.isSingleArg && !arg0.value)return arg0;//implements `&&` ; `a>b>c` --> `a>b&&b>c`
+													let arg1 = handleComparisonChain(exp.args[1]);
+													let args:Value_Returnable[] = [
+														derefValueFully(arg0.args[1]),
+														derefValueFully(arg1.args[0]),
+													];
+													return {value:foo(args[0],args[1]),args};
+												}else{
+													let arg = evalCode.statement(exp,context);
+													return {value:undefined,args:[arg,arg],isSingleArg:true};
+												}
+											}
+											let {value,args} = handleComparisonChain(exp);
+											return new ValueWrapperReturnValue({value,boolReturnValue:args[0]})
+										},
+									],
+									[
+										"++",
+										()=>{
+											assert(!(!!exp.args[0] && !!exp.args[1]),"should not be infix");
+											let arg = exp.args[0] ?? exp.args[1];
+											let afix:u2&Expression.AfixType = exp.afix;
+											assert(!!arg);
+											let property = unwrapValue(evalCode.statement(exp.args[0],context));
+											let value:Number|Value = derefValueFully(property);
+											if(typeof value != "number")value = 0;
+											return match(afix,[
+												[Expression.AfixType.postfix,()=>assignToValue(property,value+1)],
+												[Expression.AfixType.prefix,()=>{assignToValue(property,value+1);return property}],
+											]);
+										}
+									],
+									[
+										word=>exp.afix == Expression.AfixType.prefix &&
+										word.match(/^[+\-~!]$/),
+										()=>numericOperator(
+											new Function("_,x",`return ${exp.wordSymbol.word} x`)
+										)
+									],
+									[
+										word=>exp.afix == Expression.AfixType.postfix &&
+										word.match(/^[+~!]$/),
+										()=>numericOperator(
+											new Function("x,_",`return ${exp.wordSymbol.word} x`)
+										)
+									],
+								],//----
+								...[//ternary operators
+									["&?",()=>{
+										let value = unwrapValue(evalCode.statement(exp.args[0],context));
+										if(!!derefValueFully(value))
+											return new ValueWrapperReturnValue({value:evalCode.statement(exp.args[1],context),boolReturnValue:value});
+										else return new ValueWrapperReturnValue({value:null,boolReturnValue:value});
+									}],
+									["?&",()=>{//python-like reversed if statement`
+										let value = unwrapValue(evalCode.statement(exp.args[1],context));
+										if(!!derefValueFully(value))
+											return new ValueWrapperReturnValue({value:evalCode.statement(exp.args[0],context),boolReturnValue:value});
+										else return new ValueWrapperReturnValue({value,boolReturnValue:value});
+									}],
+									["|?",()=>{//`a&?b|?c` very similar to else but without `#?`
+										let value = evalCode.statement(exp.args[0],context);
+										if(!(value instanceof ValueWrapperReturnValue))
+											exp.wordSymbol.throwError("syntax","missing if statement in pattern 'exp&&exp|?exp'",e=>Error(e))
+										let boolValue:Value = value.boolReturnValue;
+										if(!!derefValueFully(boolValue)){
+											return unwrapValue(value);
+										}
+										else {//else
+											return evalCode.statement(exp.args[1],context);
+										}
+									}],
+								],
+								//keyword operators
+									["=>",()=>{
+										let innerContext = context.new_child_statement();
+										return match(context.contextType,[
+											[[Context.ContextType.default],()=>todo("use argument as #@ in right exp")],
+											[[Context.ContextType.if],()=>{assert.impossibleCase("handled elsewhere")}]
+										]);
+									}],
+									["if",()=>{//`if a => b` or `if a b`
+										let innerContext = context.new_child_statement({contextType:Context.ContextType.if});
+										assume(exp.args[1].wordSymbol.word == "=>" || exp.args[2],"e.g. 'if name;' is not defined in the syntax spec")
+										const arrowExpArgs:Expression[2] = exp.args[2]?[exp.args[1],exp.args[2]]:exp.args[1].args;
+										let argument = evalCode.statement(arrowExpArgs[0],innerContext);
+										const bool = derefValueFully(argument);
+										argument = argument instanceof ValueWrapperReturnValue?
+											argument.boolReturnValue:
+											derefValue(argument)
+										;
 										innerContext.add_parameterSymbols({[Context.ParameterSymbol["#?"]]:[argument]});
-										return evalCode.statement(exp.args[1],innerContext);
-									}
-								}],
-								["assert",()=>{//TODO allow `assert exp=>message_exp`
-									let value = evalCode.statement(exp.args[1],context);
-									if(!derefValueFully(value))exp.wordSymbol.throwError("assertion",`assertion failed${value instanceof ValueWrapperReturnValue?`: found '${value.boolReturnValue}'`:""}`,e=>Error(e))
-									return value instanceof ValueWrapperReturnValue?value.boolReturnValue:value;
-								}],
-							//----
-						],);//()=>todo.silent()
-					}],
-				]);
+										let value = bool? unwrapValue(evalCode.statement(arrowExpArgs[1],innerContext)):null;
+										value = new ValueWrapper({value,statementReturnValue:{value:argument}});
+										return value;
+									}],
+									["else",()=>{
+										let value:ValueWrapper<{statementReturnValue}>|Value = evalCode.statement(exp.args[0],context);//from if statement
+										if(!(value instanceof ValueWrapper) || !value.statementReturnValue)
+											exp.wordSymbol.throwError("syntax","missing if statement in pattern 'if exp=>exp else exp'",e=>Error(e))
+										let boolValue:Value = value.value;
+										let statementReturnValue:Value = value.statementReturnValue.value;
+										if(!!derefValueFully(boolValue)){
+											return unwrapValue(value);
+										}
+										else {//else
+											let innerContext = context.new_child_statement({contextType:Context.ContextType.else});
+											const argument = value.statementReturnValue.value;
+											innerContext.add_parameterSymbols({[Context.ParameterSymbol["#?"]]:[argument]});
+											return evalCode.statement(exp.args[1],innerContext);
+										}
+									}],
+									["assert",()=>{//TODO allow `assert exp=>message_exp`
+										let value = evalCode.statement(exp.args[1],context);
+										if(!derefValueFully(value))exp.wordSymbol.throwError("assertion",`assertion failed${value instanceof ValueWrapperReturnValue?`: found '${value.boolReturnValue}'`:""}`,e=>Error(e))
+										return value instanceof ValueWrapperReturnValue?value.boolReturnValue:value;
+									}],
+								//----
+							],);//()=>todo.silent()
+						}],
+					]);
+				}
+				catch(error){
+					if(error instanceof Break && error.ownerScopeObject == context.namespace.variables){//break `value?scope_name`
+						return error.returnValue;
+					}
+					else throw error;
+				}
+				return value;
 			},
 			functionCallArguments(args:Value[],context){//`a:>b|>foo(c;d)<:e`
 				todo()
@@ -1716,7 +1756,16 @@ const fs = Deno;//require("fs");
 							[Context.ParameterSymbol["#\\"]]:[foo],
 							[Context.ParameterSymbol["#.."]]:[args],
 						});//assume: foo is NOT a class
-						let value = evalCode.statement(foo.exp.args[1],innerContext);
+						let value;
+						try{
+							value = evalCode.statement(foo.exp.args[1],innerContext);
+						}
+						catch(error){
+							if(error instanceof Break && error.ownerScopeObject == null){//`exp?` defaults to returning to function
+								return error.returnValue;
+							}
+							else throw error;
+						}
 						return derefValue(value);
 					}
 				}],
@@ -1923,7 +1972,16 @@ const fs = Deno;//require("fs");
 				],()=>value);
 			}
 		//----
-		let value = evalCode.forEach_exps(rootPattern,Context.new_root());
+		let value;
+		try{
+			value = evalCode.forEach_exps(rootPattern,Context.new_root());
+		}
+		catch(error){
+			if(error instanceof Break){
+				value = error.returnValue;
+			}
+			else throw error;
+		}
 		return {value,valueInternal:derefValueFully(value)};
 	}
 //----
