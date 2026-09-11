@@ -7,6 +7,7 @@ export function parseIntoOperatorSyntaxTree_function(
 		match,
 		pass,
 		assert,
+		assume,
 		forBailOld,
 		forBailGenerator,
 		matchFlags,
@@ -189,9 +190,6 @@ export function parseIntoOperatorSyntaxTree_function(
 					"!@*"     :{afix:OperatorData.AfixType.prefix},
 				},
 				{
-					"¬"       :{afix:OperatorData.AfixType.infix,parameter:OperatorData.right},
-				},
-				{
 					"**"      :{afix:OperatorData.AfixType.infix},
 					"%%"      :{afix:OperatorData.AfixType.infix},
 				},
@@ -279,7 +277,7 @@ export function parseIntoOperatorSyntaxTree_function(
 					"ref"     :{afix:OperatorData.AfixType.prefix},
 				},
 				{
-					"¬":{afix:OperatorData.AfixType.infix,parameter:OperatorData.left},
+					"¬":{afix:OperatorData.AfixType.postfix},
 				},
 			])
 		;
@@ -474,11 +472,15 @@ export function parseIntoOperatorSyntaxTree_function(
 								word.operatorData = possibleAfixes.infix;
 								return null;//skip this word '+='
 							}
-							if([SyntaxTree.subtype.assignment,SyntaxTree.subtype.declaration].includes(word.subtype)){//handles ':' and '=' and their compound patterns ':=' in 'a:T=b'
+							if([SyntaxTree.subtype.assignment,SyntaxTree.subtype.declaration].includes(word.subtype)){//handles ':' and '='
 								let isStart = i == 0 || "\\".includes(words[i-1].word);// '{=' or '\:' ; no left argument
 								let possibleAfix:u2&Bool[2] = 0b11;//:u2&[has_left_arg,has_right_arg]
 								if(isStart){
 									possibleAfix &= ~SyntaxTree.AfixType.operatorWithLeftArg;
+								}
+								const nextWordmustHaveLeftArg = words[i+1]?.type == SyntaxTree.type.operator && (operatorProceedence[words[i+1]].postfix||operatorProceedence[words[i+1]].infix) && !(operatorProceedence[words[i+1]].prefix||operatorProceedence[words[i+1]].nofix)
+								if(nextWordmustHaveLeftArg){
+									possibleAfix &= ~SyntaxTree.AfixType.operatorWithRightArg;		
 								}
 								operatorData = afixIntoOperatorData(possibleAfixes,possibleAfix);
 								assert(operatorData,`'${exps}'`);
@@ -509,7 +511,6 @@ export function parseIntoOperatorSyntaxTree_function(
 								){
 									possibleAfix &= ~SyntaxTree.AfixType.operatorWithRightArg;//note: preceedence doesn't matter for removing right arg here since a syntax error would be thrown if it's wrong either way
 								}
-									
 								operatorData = afixIntoOperatorData(possibleAfixes,possibleAfix);//:OperatorData?
 								{//special cases ; afix is not obvious works out which one to choose
 									if(!operatorData){//assign afix based on afix priority
@@ -542,20 +543,20 @@ export function parseIntoOperatorSyntaxTree_function(
 											)?possibleAfixes.prefix
 											:possibleAfixes.nofix
 									}
-									if(!operatorData)
-										word.throwError("syntax", `cannot use operator in that pattern got pattern: \`${
-												!!(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)?words[i-1]:""//"A": ""
-											} ${word} ${
-												!!(possibleAfix&OperatorData.AfixType.operatorWithRightArg)?words[i+1]:""//"B": ""
-											}\`. Expected \`${
-												!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithLeftArg)?"A": ""
-											} ${word} ${
-												!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithRightArg)?"B": ""
-											}\`.
-										`,e=>Error(e))
-									;
 								}
 							}
+							if(!operatorData)
+								word.throwError("syntax", `cannot use operator in that pattern got pattern: \`${
+										!!(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)?words[i-1]:""//"A": ""
+									} ${word} ${
+										!!(possibleAfix&OperatorData.AfixType.operatorWithRightArg)?words[i+1]:""//"B": ""
+									}\`. Expected \`${
+										!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithLeftArg)?"A": ""
+									} ${word} ${
+										!!((possibleAfixes.infix??possibleAfixes.prefix??possibleAfixes.postfix??possibleAfixes.nofix).afix&OperatorData.AfixType.operatorWithRightArg)?"B": ""
+									}\`.
+								`,e=>Error(e))
+							;
 							exp.operatorData = operatorData;
 							exp.afix = operatorData.afix;
 							word.afix = operatorData.afix;
@@ -591,13 +592,21 @@ export function parseIntoOperatorSyntaxTree_function(
 								)
 								|| (excludeAssignmentOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.assignment)
 								|| (excludeDeclarationOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.declaration)
+							;
 						}
 						function isOptionalArgument(exp,j){
 							return exp?.operatorData?.optionalArg?.[j] || exp?.wordSymbol?.subtype == SyntaxTree.subtype.declaration;
 						}
 						function missingOperatorError(selfExp,argExp,argIndex){
 							if(1)console.error(printTree(exps));
-							selfExp.wordSymbol.throwError("syntax",`operator '${selfExp.wordSymbol}' missing ${["left", "right"][argIndex]} argument`,e=>Error(e));
+								selfExp.wordSymbol.throwError("syntax",`${
+									{"¬":"collection "}[selfExp.wordSymbol.word]??""
+								}operator '${
+									selfExp.wordSymbol
+								}' missing ${
+									["left", "right"][argIndex]
+								} argument`,
+							e=>Error(e));
 						}
 						function handleBracketAfix(exps,i){
 							if(exps[i] instanceof Expression.Bracket && !exps[i].knownAfix){//handles `(...)` and `foo(...)`
@@ -676,7 +685,7 @@ export function parseIntoOperatorSyntaxTree_function(
 								}
 								if(hasParamEnder){
 									exp.paramEnder.args = args;
-									collectIntoTree(i1,exp.operatorData.proceedence[1],exps);
+									collectIntoTree(i1,exp.operatorData.proceedence[1],exps,isTypeSyntax,false);
 									exp.args = [exp.paramEnder,exps.splice(i1,1)[0]??undefined];
 									continue;
 								}
@@ -695,7 +704,7 @@ export function parseIntoOperatorSyntaxTree_function(
 										args[0] = null;
 									}
 								}
-								collectIntoTree(i1,exp.operatorData.proceedence[1],exps,false,isParameter);
+								collectIntoTree(i1,exp.operatorData.proceedence[1],exps,isTypeSyntax,isParameter);
 							}
 							else if(exp.wordSymbol.word == "£"){
 								collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,false,false);
@@ -821,7 +830,17 @@ export function parseIntoOperatorSyntaxTree_function(
 							}
 						}
 					}
-					collectIntoTree(0,maxProceedence,exps);
+					for(let i=0;i<exps.length;i++){
+						if(exps[i] == "¬"){
+							let expsSlice = exps.slice(0,i);
+							collectIntoTree(0,maxProceedence,expsSlice);
+							assert(expsSlice.length == 1);{
+								exps[i].args[0] = expsSlice.pop();
+							}
+							exps.splice(0,i);
+						}
+					}
+					if(exps.length>1)collectIntoTree(0,maxProceedence,exps);
 				}
 			}
 			if(exps.length > 1){

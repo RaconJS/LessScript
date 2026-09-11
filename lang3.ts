@@ -583,6 +583,7 @@ const fs = Deno;//require("fs");
 		match,
 		pass,
 		assert,
+		assume,
 		forBailOld,
 		forBailGenerator,
 		matchFlags,
