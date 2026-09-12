@@ -747,9 +747,53 @@ const fs = Deno;//require("fs");
 		//classes:
 			interface Expression{
 				typeAnnotation?:Expression<"::"> & Tree<Expression>;
-			}
-			const assignSymbol = Symbol("a = b");//allows custom assignment function
-			
+			}		
+
+			const defualtFunctionsInternal = {
+				map(self:Array,mapFunc){
+					assert(self instanceof Array);
+					return self.map((v,i,a)=>functionCall(mapFunc,[v,i,a]))
+				},
+				reduce(self:Array,start,foo){
+					assert(self instanceof Array);
+					let innerFunction = arguments.length>2?foo:start;
+					let reduceFunction = (s,v,i,a)=>functionCall(innerFunction,[s,v,i,a]);
+					return self.reduce(
+						...([[reduceFunction],[reduceFunction,start]][+(arguments.length>2)])
+					);
+				},
+				reduceForNumber(self:Number,start,foo){
+					assert(typeof self == "number");
+					let innerFunction = arguments.length>2?foo:start;
+					let reduceFunction = (s,v,i,a)=>functionCall(innerFunction,[s,i,a]);
+					return new Array(self).fill().reduce(
+						...([[reduceFunction,null],[reduceFunction,start]][+(arguments.length>2)])
+					);
+				},
+				iterate(self:Number,foo):Array{
+					return new Array(self).fill().map((_,i)=>functionCall(foo,[i]))
+				},
+				repeat(self:Number,foo):void{
+					for(let i=0;i<self;i++)functionCall(foo,[i]);
+				},
+			};
+			const defaultFunctions_ObjectValue = {
+				"="():Array{return defualtFunctionsInternal.map(this.array,...arguments)},
+				">"():Value{return defualtFunctionsInternal.reduce(this.array,...arguments)},
+				"||":{get(self):Value{return self.array.length}},//length
+			};
+			const defaultFunctions_Array = {
+				"="():Array{return defualtFunctionsInternal.map(this,...arguments)},
+				">"():Value{return defualtFunctionsInternal.reduce(this,...arguments)},
+				"||":{get(self):Value{return self.length}},//length
+			};
+			const defaultFunctions_number = {
+				"<"():Array{return defualtFunctionsInternal.iterate(+this,...arguments)},
+				"="():Array{return defualtFunctionsInternal.repeat(+this,...arguments)},
+				">"():Value{return defualtFunctionsInternal.reduceForNumber(+this,...arguments)},
+			};
+			const defaultFunctions_all = {};
+
 			type Name = String|Symbol|Index;
 			type Index = Number&Int;
 			type Index<array> = Number&Int;//index on object `array`
@@ -791,6 +835,7 @@ const fs = Deno;//require("fs");
 				Function|
 				null
 			);
+			type ArgumentObj = ObjectValue | Array&Value_Storable[] | Object&{[Any]:Value_Storable}
 			const isSearched = Symbol("searched");
 			class PropertyDataInternal{//internal class, cannot be returned by an expression
 				constructor(data={}){Object.assign(this,data);}
@@ -885,7 +930,7 @@ const fs = Deno;//require("fs");
 				ownerScopeObject:ObjectValue&Item<Namespace.variables>;//valueObject from namespace representing the scope to return to
 			}
 			class Context{
-				static ContextType = EnumSymbols("default","if","else","match","case");
+				static ContextType = EnumSymbols("default","if","else","for","while","match","case");
 				static ParameterSymbol = EnumSymbols("#@","#?","#!","##","#/","#\\","#..");
 				namespace:Namespace = new Namespace();
 				module:&Module;
@@ -931,7 +976,6 @@ const fs = Deno;//require("fs");
 					return new Context(this);
 				}
 			}
-
 			class ObjectValue{
 				constructor(data={}){Object.assign(this,data);}
 				properties:Object&Map<Name,Value> = {};
@@ -967,50 +1011,6 @@ const fs = Deno;//require("fs");
 					return this.array;
 				}
 			}
-			const defualtFunctionsInternal = {
-				map(self:Array,mapFunc){
-					assert(self instanceof Array);
-					return self.map((v,i,a)=>functionCall(mapFunc,[v,i,a]))
-				},
-				reduce(self:Array,start,foo){
-					assert(self instanceof Array);
-					let innerFunction = arguments.length>2?foo:start;
-					let reduceFunction = (s,v,i,a)=>functionCall(innerFunction,[s,v,i,a]);
-					return self.reduce(
-						...([[reduceFunction],[reduceFunction,start]][+(arguments.length>2)])
-					);
-				},
-				reduceForNumber(self:Number,start,foo){
-					assert(typeof self == "number");
-					let innerFunction = arguments.length>2?foo:start;
-					let reduceFunction = (s,v,i,a)=>functionCall(innerFunction,[s,i,a]);
-					return new Array(self).fill().reduce(
-						...([[reduceFunction],[reduceFunction,start]][+(arguments.length>2)])
-					);
-				},
-				iterate(self:Number,foo):Array{
-					return new Array(self).fill().map((_,i)=>functionCall(foo,[i]))
-				},
-				repeat(self:Number,foo):void{
-					for(let i=0;i<self;i++)functionCall(foo,[i]);
-				},
-			};
-			const defaultFunctions_ObjectValue = {
-				"="():Array{return defualtFunctionsInternal.map(this.array,...arguments)},
-				">"():Value{return defualtFunctionsInternal.reduce(this.array,...arguments)},
-				"||":{get(self):Value{return self.array.length}},//length
-			};
-			const defaultFunctions_Array = {
-				"="():Array{return defualtFunctionsInternal.map(this,...arguments)},
-				">"():Value{return defualtFunctionsInternal.reduce(this,...arguments)},
-				"||":{get(self):Value{return self.length}},//length
-			};
-			const defaultFunctions_number = {
-				"<"():Array{return defualtFunctionsInternal.iterate(+this,...arguments)},
-				"="():Array{return defualtFunctionsInternal.repeat(+this,...arguments)},
-				">"():Value{return defualtFunctionsInternal.reduceForNumber(+this,...arguments)},
-			};
-			const defaultFunctions_all = {};
 			class Namespace{
 				constructor(data={}){Object.assign(this,data)}
 				parent?:Namespace&Tree<Namespace> = null;
@@ -1037,24 +1037,25 @@ const fs = Deno;//require("fs");
 					return data;
 				}
 				assignVariable(name:Name,value:Value,isDeclaration:bool=false):Option<PropertyRef>{//note: returns Some<...> if isDeclaration
-					let propertyData = this.getVariableRef(name,isDeclaration)?.set?.(value,isDeclaration);
+					let propertyData = this.getVariableRef(name,isDeclaration)?.set?.(value??null,isDeclaration);
 					if(isDeclaration)todo.silent("handle declaration");
 					return propertyData?new PropertyRef(propertyData):null;
 				}
 				declareVariable(name:Name,value?:Value):PropertyRef{
 					todo.silent("handle modules");
 					todo.silent("allow `a:(b:2);a.b=4;assert a[0]==a.b`; linking property and tuple index; maybe add a index<-->name' map")
-					let propertyRef = this.assignVariable(name,value??null,true);
+					let propertyRef = this.assignVariable(name,value,true);
 					assert(!!propertyRef);
 					return propertyRef;
 				}
 			}
+			class FunctionData{//used for external arguments `a:>foo(b)<:c|>bar`; stored as an argument in evalCode.statement
+				constructor(data={}){Object.assign(this,data)}
+				arguments:ArgumentObj;
+				function:Value;
+			}
 			class ModuleObj{
 				privateSymbolMap:Map<String,Symbol>;
-			}
-			class Destruture{
-				constructor(data={}){Object.assign(this,data);}
-				parameterName:Name;//`a` in `(b:a):obj` or `(b:${exp}):obj`
 			}
 		//----
 		const AllPrivateSymbols = Symbol("a.$*");
@@ -1079,7 +1080,7 @@ const fs = Deno;//require("fs");
 				}
 				return hasSepparator?null:lastValue;
 			},
-			statement(exp:Option<Expression>,context:Context):Value{
+			statement(exp:Option<Expression>,context:Context,functionData?:FunctionData):Value{
 				assert(!!context)
 				if(!exp)return undefined;
 				let value;
@@ -1199,10 +1200,23 @@ const fs = Deno;//require("fs");
 									}
 									return value;
 								}],
-								[",",()=>{//function call
-									todo.silent("handle arguments");
-									return functionCall(evalCode.statement(exp.args[0],context),exp.args[1]?[evalCode.statement(exp.args[1],context)]:[]);
-								}],
+								...[//function calls
+									[",",()=>{//function call
+										todo.silent("handle arguments");
+										const args = functionArgs ?? [];
+										if(exp.args[1])args.push(evalCode.statement(exp.args[1],context));
+										return functionCall(evalCode.statement(exp.args[0],context),args);
+									}],
+									[[":>"],()=>{//external argument
+										todo(`pipe arguments. got '${exp.wordSymbol.word}'`);
+										const args = functionArgs ?? [];
+										let arg = evalCode.statement(exp.args[0],context,args);
+										args.push(arg);
+										evalCode.statement(exp.args[1],context,args)
+									}],
+									//[["<:"],()=>{}],
+									//[["|>","<|",","],()=>{}],
+								],
 								[["$$","$"],()=>evalCode.getName(exp,context)],
 								["£",()=>{//`a£b` --> `a`
 									const isReverseOrder = exp.isReverseOrder;
@@ -1483,6 +1497,11 @@ const fs = Deno;//require("fs");
 										if(!derefValueFully(value))exp.wordSymbol.throwError("assertion",`assertion failed${value instanceof ValueWrapperReturnValue?`: found '${value.boolReturnValue}'`:""}`,e=>Error(e))
 										return value instanceof ValueWrapperReturnValue?value.boolReturnValue:value;
 									}],
+									["for",()=>{
+										let innerContext = context.new_child_statement({contextType:Context.ContextType.for});
+										innerContext.add_parameterSymbols({[Context.ParameterSymbol["#@"]]:[]});
+										todo("`for in` loop");
+									}],
 								//----
 							],);//()=>todo.silent()
 						}],
@@ -1681,6 +1700,9 @@ const fs = Deno;//require("fs");
 					],
 				],()=>value);
 			},
+			functionArguments(exp:Expression<"|>"|"<|"|":>"|"<:"|","|"foo()">){
+
+			}
 		};
 		function functionCall(foo:Value|PropertyRef,args:ObjectValue|Value[],self?:ObjectValue|Array|Object,hasSelf = false):Value&(Value_Assignable|Value_Returnable){
 			assert(//args:ObjectValue|Value[]
@@ -1973,17 +1995,18 @@ const fs = Deno;//require("fs");
 				],()=>value);
 			}
 		//----
-		let value;
+		let valueInternal;
 		try{
-			value = evalCode.forEach_exps(rootPattern,Context.new_root());
+			valueInternal = evalCode.forEach_exps(rootPattern,Context.new_root());
 		}
 		catch(error){
-			if(error instanceof Break){
-				value = error.returnValue;
+			if(error instanceof Error)throw error;
+			else if(error instanceof Break){
+				valueInternal = error.returnValue;
 			}
 			else throw error;
 		}
-		return {value,valueInternal:derefValueFully(value)};
+		return {value:derefValueFully(valueInternal),valueInternal};
 	}
 //----
 	//for each in tree
@@ -2064,7 +2087,7 @@ function compile(text,throwError,fileName="main file"){
 		parseAST(abstractSyntaxTree);//:mutates rootPattern
 		let {value,valueInternal} = runAST(abstractSyntaxTree);
 		//assert(abstractSyntaxTree == rootPattern);
-		if(0)console.error(printTree(abstractSyntaxTree));
+		if(1)console.error(printTree(abstractSyntaxTree));
 		console.error(value);
 		return value;
 	}
