@@ -2117,7 +2117,7 @@ let {rawText:a,fileName} = (()=>{
 	//----
 	let rawText,fileName;
 	if(runFromFile || terminalArgs.length == 0){
-		fileName = terminalArgs[0]??"code/temp.lang3";
+		fileName = terminalArgs[0]??"code/temp.ls";
 		rawText = getFile_expect(fileName);;
 	}
 	else{

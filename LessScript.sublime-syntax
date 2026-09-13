@@ -2,7 +2,7 @@
 ---
 # See http://www.sublimetext.com/docs/syntax.html
 file_extensions:
-  - lang3
+  - ls
 scope: source.lang
 variables:
   number: '(?x)
