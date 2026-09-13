@@ -1,7 +1,7 @@
 {
-	"shell_cmd": "deno run --allow-read $packages/my-languages/newLang3/main.ts -f \"$file\"",
-	"selector": "newLang3",
+	"shell_cmd": "deno run --allow-read $packages/my-languages/LessScript/main.ts -f \"$file\"",
+	"selector": "LessScript",//Elis
 	"target": "ansi_color_build",
     "syntax": "Packages/ANSIescape/ANSI.sublime-syntax",
-	"file_patterns":["*.lang3"],
+	"file_patterns":["*.ls"],
 }
