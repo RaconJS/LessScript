@@ -1178,7 +1178,11 @@ const fs = Deno;//require("fs");
 									return value;
 								}],
 								["=",()=>{
-									let assignedValues = evalCode.assignVariables_OBSILETE(exp.args[0],exp.args[1],context);
+									let assignValue = evalCode.statement(exp.args[1],context);
+									if(exp.wordSymbol.subWord){//`a+=b`
+										todo("handle pattern 'a+=b'");
+									}
+									let assignedValues = evalCode.assignVariables(exp.args[0],assignValue,context);
 									return assignedValues;
 								}],
 								[".",()=>{
@@ -1203,19 +1207,19 @@ const fs = Deno;//require("fs");
 								...[//function calls
 									[",",()=>{//function call
 										todo.silent("handle arguments");
-										const args = functionArgs ?? [];
+										const args = functionData?.args ?? [];
 										if(exp.args[1])args.push(evalCode.statement(exp.args[1],context));
 										return functionCall(evalCode.statement(exp.args[0],context),args);
 									}],
 									[[":>"],()=>{//external argument
 										todo(`pipe arguments. got '${exp.wordSymbol.word}'`);
-										const args = functionArgs ?? [];
+										const args = functionData?.args ?? [];
 										let arg = evalCode.statement(exp.args[0],context,args);
 										args.push(arg);
 										evalCode.statement(exp.args[1],context,args)
+										//[["<:"],()=>{}],
+										//[["|>","<|",","],()=>{}],
 									}],
-									//[["<:"],()=>{}],
-									//[["|>","<|",","],()=>{}],
 								],
 								[["$$","$"],()=>evalCode.getName(exp,context)],
 								["£",()=>{//`a£b` --> `a`
@@ -1586,7 +1590,7 @@ const fs = Deno;//require("fs");
 			declareVariables(parameter_exp:Expression,assign:Value,context:Context,errorWordSymbol_assignValue:WordSymbol):Value & mutate<context>{
 				return evalCode.assignVariables(parameter_exp,assign,context,errorWordSymbol_assignValue,true);
 			},
-			assignVariables(parameter_exp:Expression|undefined,assignValue:Value,context:Context,errorWordSymbol_assignValue:WordSymbol,isDeclaration:bool=false):Value & mutate<context>{
+			assignVariables(parameter_exp:Expression|undefined,assignValue:Value,context:Context,errorWordSymbol_assignValue:WordSymbol,isDeclaration?:bool=false,operator?:WordSymbol):Value & mutate<context>{
 				function error_cannotAssignTo_Value_Derefed(){
 					parameter_exp.wordSymbol.throwError("logic",`in ${["assignment", "declaration"][!!isDeclaration]} pattern: expected name/property, found value '${parameter_exp.wordSymbol.word}'.`,e=>Error(e))
 				}
@@ -1701,8 +1705,11 @@ const fs = Deno;//require("fs");
 				],()=>value);
 			},
 			functionArguments(exp:Expression<"|>"|"<|"|":>"|"<:"|","|"foo()">){
-
-			}
+				todo();
+			},
+			assignableOperator(operatorWord:WordSymbol,assignTypeWord?:WordSymbol<":"|"=">,variableExp:Expression,assignExp:Expression,context){
+				
+			},
 		};
 		function functionCall(foo:Value|PropertyRef,args:ObjectValue|Value[],self?:ObjectValue|Array|Object,hasSelf = false):Value&(Value_Assignable|Value_Returnable){
 			assert(//args:ObjectValue|Value[]
