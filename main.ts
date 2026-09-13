@@ -824,7 +824,7 @@ const fs = Deno;//require("fs");
 				ObjectValue|
 				Name|
 				Index|
-				JavascriptValue
+				Value_Javascript
 			;
 			type PropertyRef<isReturnable=true|false> = PropertyRef & {isReturnable};
 			type Value_Javascript = Any & (
@@ -2094,7 +2094,7 @@ function compile(text,throwError,fileName="main file"){
 		parseAST(abstractSyntaxTree);//:mutates rootPattern
 		let {value,valueInternal} = runAST(abstractSyntaxTree);
 		//assert(abstractSyntaxTree == rootPattern);
-		if(1)console.error(printTree(abstractSyntaxTree));
+		if(0)console.error(printTree(abstractSyntaxTree));
 		console.error(value);
 		return value;
 	}

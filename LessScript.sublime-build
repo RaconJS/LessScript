@@ -1,6 +1,6 @@
 {
 	"shell_cmd": "deno run --allow-read $packages/my-languages/LessScript/main.ts -f \"$file\"",
-	"selector": "LessScript",//Elis
+	"selector": "LessScript",
 	"target": "ansi_color_build",
     "syntax": "Packages/ANSIescape/ANSI.sublime-syntax",
 	"file_patterns":["*.ls"],

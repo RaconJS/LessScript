@@ -536,7 +536,7 @@ export function parseIntoOperatorSyntaxTree_function(
 												(possibleAfixes.infix?.optionalArg?.[1] || !!(possibleAfix&OperatorData.AfixType.operatorWithRightArg))
 											)?possibleAfixes.infix
 											:(
-												possibleAfixes.postfix?.optionalArg?.[1] || !!(possibleAfix&OperatorData.AfixType.operatorWithLefArg)
+												possibleAfixes.postfix?.optionalArg?.[1] || !!(possibleAfix&OperatorData.AfixType.operatorWithLeftArg)
 											)?possibleAfixes.postfix
 											:(
 												possibleAfixes.prefix?.optionalArg?.[1] || !!(possibleAfix&OperatorData.AfixType.operatorWithRightArg)
@@ -586,9 +586,10 @@ export function parseIntoOperatorSyntaxTree_function(
 								&& (excludeParameterSeparator && 
 									exp.wordSymbol == "#" &&
 									!(
-										exps[i-1].wordSymbol.word == "\\"
-										|| (exps[i-1].afix&Expression.AfixType.operatorWithRightArg)
-										&& !exps[i-1].args?.[1])
+										exps[i-1]?.wordSymbol?.word == "\\"
+										|| (exps[i-1]?.afix&Expression.AfixType.operatorWithRightArg)
+										&& !exps[i-1]?.args?.[1]
+									)
 								)
 								|| (excludeAssignmentOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.assignment)
 								|| (excludeDeclarationOperator && exp.wordSymbol.subtype == SyntaxTree.subtype.declaration)
