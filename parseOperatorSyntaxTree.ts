@@ -472,9 +472,9 @@ export function parseIntoOperatorSyntaxTree_function(
 								word.operatorData = possibleAfixes.infix;
 								return null;//skip this word '+='
 							}
+							let possibleAfix:u2&Bool[2] = 0b11;//:u2&[has_left_arg,has_right_arg]
 							if([SyntaxTree.subtype.assignment,SyntaxTree.subtype.declaration].includes(word.subtype)){//handles ':' and '='
 								let isStart = i == 0 || "\\".includes(words[i-1].word);// '{=' or '\:' ; no left argument
-								let possibleAfix:u2&Bool[2] = 0b11;//:u2&[has_left_arg,has_right_arg]
 								if(isStart){
 									possibleAfix &= ~SyntaxTree.AfixType.operatorWithLeftArg;
 								}
@@ -492,7 +492,6 @@ export function parseIntoOperatorSyntaxTree_function(
 									assert(!!operatorData);
 									break get_afix;
 								}
-								let possibleAfix = 0b11;
 								if(!isCanHaveLeftArgument(i))possibleAfix &= ~SyntaxTree.AfixType.operatorWithLeftArg;
 								if(//checks for right argument ; '+b' / 'a+b'
 									!hasArg(words[i+1]) ||

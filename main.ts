@@ -896,8 +896,11 @@ const fs = Deno;//require("fs");
 				unwrap(){return unwrapValue(this.value);}
 				deref(){return derefValue(this.value);}
 				derefFully(){return derefValueFully(this.value);}//ignores storable PropertyRefs
+				static Typed = class Typed{
+					type:Expression|Value;
+				}
 			}
-			class ValueStatementWrapper{
+			class ValueStatementWrapper{//UNUSED
 				constructor(data={}){Object.assign(this,data);}
 				value:Value;
 				statementReturnValue?:{value:Value};//e.g. `a` in `if a=>a else 0` ; used by statements like 'if'/'else' to pass data between them; stores the return value of a statement
@@ -956,7 +959,6 @@ const fs = Deno;//require("fs");
 							...{
 								prompt,
 								confirm,
-								Deno,
 								global,
 								globalThis,
 								Math
@@ -1002,7 +1004,7 @@ const fs = Deno;//require("fs");
 					]);
 				}
 				toJS(){
-					return this.isArrayType?this.toJSArray():this.toJSObject;
+					return this.isArrayType?this.toJSArray():this.toJSObject();
 				}
 				toJSObject():&Object{
 					return this.properties;
@@ -1131,6 +1133,7 @@ const fs = Deno;//require("fs");
 									functionObj = evalCode.statement(exp.args[0],context);
 								}
 								let variable = new ObjectValue();
+								if(exp.wordSymbol.word == "[")variable.isArrayType = true;
 								let innerContext = context.new_child_namespace({},{variables:variable});
 								const bracket_exp = exp;
 								void evalCode.forEach_exps(bracket_exp.contence,innerContext,(value,exp)=>{
@@ -1184,6 +1187,13 @@ const fs = Deno;//require("fs");
 									}
 									let assignedValues = evalCode.assignVariables(exp.args[0],assignValue,context);
 									return assignedValues;
+								}],
+								["::",()=>{
+									todo.silent("handle semi-type evaluation and comment-like type annotations propperly");
+									return new ValueWrapper.Typed({
+										value:evalCode.statement(exp.args[0],context),
+										type:exp.wordSymbol.word,
+									})
 								}],
 								[".",()=>{
 									let parent = derefValue(evalCode.statement(exp.args[0],context));
@@ -1994,9 +2004,9 @@ const fs = Deno;//require("fs");
 				value = derefValueFully(value);
 				return match(value,[
 					[()=>value instanceof ObjectValue,()=>value.toJS()],
-					[value instanceof FunctionObj || value instanceof ClassObj,()=>
+					[()=>value instanceof FunctionObj || value instanceof ClassObj,()=>
 						({
-							[name](){return functionCall(value,arguments)},
+							[name](){return functionCall(value,[...arguments])},
 						}[name])
 					],
 				],()=>value);
