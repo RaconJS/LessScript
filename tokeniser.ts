@@ -182,18 +182,17 @@ export function tokeniser_module_method(Public_Object){
 					"assignment",// '='
 					"typeAnnotation",
 					"return",// '?' '?!'
-					"statement",// 'if' 'while' etc... ; statements with 'statement exp => exp'
+					"statement",//'if' 'while' etc... ; statements with 'statement exp => exp'
 					"autoParameter",// '#' e.g. '#', '#@', '#?' etc...
 			);
 			static subtype2 = EnumSymbols(//misc operators
 				"regex",// 'r"..."'
 				"dot",// '.' '#.'
+				"operatorAllowsDoubleExp",//statement that allow for `statement exp exp`
 				// bracket
 					"struct",// `(`
 					"array",// `[`
 					"block",// `(`
-				// statement
-					"allowsDoubleExp"//statement that allow for `statement exp exp`
 			);
 			static AfixType = {//e.g. '!a' is prefix --> '0b01'
 				nofix:0b00,//'a'
@@ -276,7 +275,7 @@ export function tokeniser_module_method(Public_Object){
 									word.match(/^\$$/) ? {type:SyntaxTree.type.operator} ://'$type' '$key'
 									word.match(/^[$@*]\*$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.prefix}://'@*' in '@* = (a=1,b=2,c=3)'
 									word.match(/^\.\.\.$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:if|while|match)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement,subtype2:SyntaxTree.subtype2.allowsDoubleExp} :
+									word.match(/^(?:if|while|match)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement,subtype2:SyntaxTree.subtype2.operatorAllowsDoubleExp} :
 									word.match(/^for$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement} :
 									word.match(/^(?:break|continue|return|catch|assert|as|is)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:mod)$/) ? {type:SyntaxTree.type.operator} :

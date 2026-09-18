@@ -47,7 +47,12 @@ const fs = Deno;//require("fs");
 					isObscuredByInnerClass:bool,//for `exp` in `\{/exp}`
 					functionExp:Expression,
 				};
-				statements:Expression<SyntaxTree.subtype.Statement|Any>[] = [];//operators that use '#@'; each '#@' refers to a different one
+				statementData?:{//operators that use '#@'; each '#@' refers to a different one
+					exp:Expression<SyntaxTree.subtype.Statement|Any>,
+					nextAutoParameterIndex:uint,//`#@`
+					nextArgumentIndex:uint,//`in exp`
+					params:Expression[],//used to address params for errors in `for in` statements (when not enough parameters)
+				};
 				parameters:{
 					"#?"?:&Expression,
 					"#!"?:&Expression,
@@ -119,26 +124,31 @@ const fs = Deno;//require("fs");
 							}
 						}
 						function addStatementParameter(parameterName,numOfParameters = 1){
-							let newParmaters = {...(context.parameters??{})};
+							let newParmaters = {...(context.parameters??{})};//deep clone parameters 
 							let newContext = {...context,parameters:newParmaters};
-							if(parameterName == "#@"){
-								context.statements = [];
-								for(let i=0;i<numOfParameters;i++)context.statements.push(exp)
+							if(parameterName == "#@"){//'#@' can have a list of statements
+								newContext.statementData = {
+									...todo(),
+								};
 							}
-							else{
-								newContext.parameters[parameterName] = [exp];
-								if(parameterName == "#\\"){
-									newContext.function = {
-										autoParameterIndex:0,
-										functionExp:exp,
-										isObscuredByInnerClass:false,
-									};
-									newContext.parameters["#.."] = [exp];
-								}
-								else if(parameterName == "#/"){
-									if(newContext.function)newContext.function.isObscuredByInnerClass = true;
-									newContext.parameters["#."] = [exp];
-								}
+							if([].includes(parameterName)){
+								newContext.parameters[parameterName]=[exp];
+							}
+							else {//stackable
+								newContext.parameters[parameterName]??=[];
+								newContext.parameters[parameterName].push(exp);
+							}
+							if(parameterName == "#\\"){
+								newContext.function = {
+									autoParameterIndex:0,
+									functionExp:exp,
+									isObscuredByInnerClass:false,
+								};
+								newContext.parameters["#.."] = [exp];
+							}
+							else if(parameterName == "#/"){
+								if(newContext.function)newContext.function.isObscuredByInnerClass = true;
+								newContext.parameters["#."] = [exp];
 							}
 							forEachExp(exp.args,newContext,paramPath);
 						}
@@ -147,6 +157,7 @@ const fs = Deno;//require("fs");
 							[word=>word == "/" && exp.afix == Expression.AfixType.prefix,()=>addStatementParameter("#/")],
 							[["if", "else"],()=>addStatementParameter("#?")],
 							["for",()=>addStatementParameter("#@")],
+							["match",()=>addStatementParameter("#@")],
 							["if",()=>addStatementParameter("#?")],
 						],()=>{forEachExp(exp.args,context,paramPath);})
 					}],

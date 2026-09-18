@@ -567,7 +567,7 @@ export function parseIntoOperatorSyntaxTree_function(
 						!words[i+1] || 
 						![SyntaxTree.type.bracket,SyntaxTree.type.operator].includes(words[i+1]?.type) ||
 						!(operatorProceedence[words[i+1].word].infix || operatorProceedence[words[i+1].word].postfix) &&
-						exps[exps.length-2]?.wordSymbol?.subtype2 != SyntaxTree.subtype2.allowsDoubleExp
+						exps[exps.length-2]?.wordSymbol?.subtype2 != SyntaxTree.subtype2.operatorAllowsDoubleExp
 					)){//do not need ';' for '{}'s
 						i++;
 						break;
@@ -722,12 +722,12 @@ export function parseIntoOperatorSyntaxTree_function(
 								collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
 								const argExp = tryGetNewAddableArg();
 								exp.args[1] = argExp;
-								if(exp.wordSymbol.subtype2 == SyntaxTree.subtype2.allowsDoubleExp && argExp && argExp.wordSymbol.word != "=>"){//allow for `if exp exp` --> `if exp => exp`
+								if(exp.wordSymbol.subtype2 == SyntaxTree.subtype2.operatorAllowsDoubleExp && argExp && argExp.wordSymbol.word != "=>"){//allow for `if exp exp` --> `if exp => exp`
 									collectIntoTree(i+1,exp.operatorData.proceedence[1],exps,exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
 									const argExp = tryGetNewAddableArg();
 									exp.args[2] = argExp;
 								}
-								if(exp.wordSymbol.subtype2 == SyntaxTree.subtype2.allowsDoubleExp && exps[i+1]?.wordSymbol?.word == "else" && !exps[i+1].args[0]){
+								if(exp.wordSymbol.subtype2 == SyntaxTree.subtype2.operatorAllowsDoubleExp && exps[i+1]?.wordSymbol?.word == "else" && !exps[i+1].args[0]){
 									const else_exp = exps[i+1];
 									else_exp.args[0] = exps.splice(i,1)[0];//for e.g. `a+if exp=>exp else exp` --> `a+{if exp=>exp else exp}`
 									collectIntoTree(i+1,else_exp.operatorData.proceedence[1],exps,else_exp.wordSymbol.subtype == SyntaxTree.subtype.typeAnnotation,isParameter);
