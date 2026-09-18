@@ -1,2 +1,2 @@
 //idea: '#:' for 'for' loops
-if 1 if 2 => [#?;#?]
+assert {if 1 if 2 => [#?;#?]} == [2;1]
