@@ -1,13 +1,8 @@
-integrate:\:{::float;//definite integral
-	x:#start;
-	dx:{#end-start}/#reps;
-	#foo;
-	reps.>(0;\[#+foo,x;x=x+dx].0)*dx
-};
-i:\:{
-	x:#s;
-	dx:{#end-start}/#reps£#foo
-	¬*reps.>\[#+foo,x;x=x+dx].0
-};
-[i(0;1;100;\#.sin);{1-1.cos}];
-l,1+£l,2 l,3
+//%a{"0" 1;"1" 2;"2" 3};
+//match a{"0" 1;"1" 2;"2" 3};
+["0":1;"1":2;"2":3][a];
+assert 3.hypot,4 == 5;
+a:[1;2];
+a;
+A:/a#b#c:0;
+assert A, == (a:;b:;c:)

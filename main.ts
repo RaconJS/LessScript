@@ -2,599 +2,37 @@
 	//1263 build type class for the language's type system
 //name suggetions: quad`.qd` (the Quick Unreadable And Dirty programming language), `.cr` Crunch
 //TODO: add code to support '::=' making '::' have the same syntax as ':'
-const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[@$#]\*|(?:\?&|&\?|\|\?|\?!)|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|=>|->|[!=]==|[><!=]=?|>{1,3}|<{1,2}|([+\-*%&|^~])\2?|#(?:\.\.|[#@?/\\])|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:(?:\d|[1-9][_\d]*)(?:\.[_\d]+)?|0[box][_\dA-Fa-f]+(?:\.[_\dA-Fa-f]+)?)\b|!!!|\.\.\.|\.\.=?|\.|\b\w+\b|\S/g;//TODO: add back '#.'
-	//note: float numbers are handed during syntax parting to allow for '3.<' aswell as '3.2'
-	//TODO:handle format strings: need to combine words together when a format string is encountered
-		//currently cannot embed format strings in other format strings
-//{//quality of life, macro-like functions
-	function loga(...a){console.log(...a);return a[0]}
-	function logData(...a){
-		console.log(...a.map(v=>v.toLog?.()??v))
-	}//log data emmits surtain information
-	/**
-	 * void let loga = [...a] -> void console.log <| ...a a<|0]
-	 * void let logData = [...a] -> {void console.log[...a.map <| v->traitof v >= trait[toLog=\(void)]? v.toLog?.():v}
-	 * void let debugMode = true
-	 * void let assert = [condision msg ??= "" errorFunc ??= a->Error[e]] -> void:(
-	 *   void 
-	 * )
-	 * */
-	const debugMode = true;
-	function assert(condision,msg = "",errorFunc = e=>Error(e)):true|Error{
-		if(debugMode){
-			msg ??= "";//msg:String|()->String
-			if(!condision)throw errorFunc("ASSERTION FAILLED:" + (typeof msg == "function"?msg():msg));
-		}
-		return true
-	}
-	function assume(condision,msg = "",errorFunc = e=>Error(e)):()=>any{
-		if(debugMode){
-			msg ??= "";
-			if(!condision)throw errorFunc("ASSUMPTION FAILLED:" + msg);
-		}
-		return (fooUsingAssumption:Fn|any)=>typeof fooUsingAssumption == "function" ? fooUsingAssumption(condision) : fooUsingAssumption;
-	}
-	assert.fail = function(msg = undefined,errorFunc = e=>Error(e)){
-		if(debugMode){
-			msg ??= "impossible case found";
-			assert(false,msg,errorFunc);
-		}
-	}
-	assert.impossibleCase = function(msg = "",errorFunc = e=>Error(e)){
-		if(debugMode){
-			assert(false,"impossible case: " + msg,errorFunc);
-		}
-	}
-	assert.expect = function(condision,msg = "",errorFunc = e=>Error(e)){
-		if(debugMode){
-			assert(condision,"expected: " + msg,errorFunc);
-		}
-	}
-	function unimplemented(msg = "",errorFunc = e=>Error(e)){
-		if(debugMode){
-			throw errorFunc("UNIMPLEMENTED:" + msg);
-		}
-	}
-	function todo(msg = "",errorFunc:(e)=>Error<e>){
-		if(debugMode){
-			throw (errorFunc??Error)("TODO:" + msg);
-		}
-	}
-	todo.flaggedErrors = {};
-	todo.silent = function(name?:String,returnValue,state?:Any,errorFunc = e=>Error(e)){
-		todo.flaggedErrors[name] ??= {state,error:errorFunc};
-		return returnValue;
-	}
-	function silentError(name?:String,state?:Any,errorFunc = e=>Error(e)){
-		silentError.flaggedErrors[name] ??= {state,error:errorFunc};
-	}
-	silentError.flaggedErrors = {};
-	function pass(v?:Any){return v}//marks a block as not meant to contain any code 
-	function forBailOld(length,onError_default=undefined){
-		//example: let n=forBailOld(array.length);while(true){n();}
-		let i_bail = 0;
-		return function next(onError=onError_default){
-			if(debugMode)if(i_bail++>length){
-				if(onError)onError(i_bail);
-				throw Error("BAILED");
-			}
-		}
-	}
-	function* forBailGenerator(length,onError_default=undefined){
-		//example: for(let _ of forBailGenerator(array.length)){...}
-		for(let i = 0; i < length;i++)yield i;
-		if(debugMode){
-			if(onError_default)onError_default(i_bail);
-			throw Error("BAILED");
-		}
-	}
-	function match<V,B,T>(value:V,setOfCases:MatchCase[],defaultCase:(v)=>T):T{
-		"use strict";
-		//type MatchCase=[(V[]|V->B|bool), B|V->T]
-		let i = -1;
-		let tryNext = forBailOld(setOfCases.length);
-		while(++i < setOfCases.length){
-			let _case:MatchCase;
-			tryNext();
-			_case = setOfCases[i];
-			if(!(_case instanceof Array))throw Error(`missing case at index ${i}, got '${_case}'. May have missed a comma between cases.`)
-			let condition = _case[0];
-			let then = _case[1];
-			let input:V|B = value;
-			if(typeof then != "function")throw Error("compiler syntax error: case "+i+" is missing `V->T`");
-			if(
-				typeof condition == "function"?input=condition(value):
-				condition instanceof Array?input=condition.includes(value):
-				value == condition
-				//(()=>{
-					//console.error(_case[0])
-					//throw Error("compiler syntax error: case " + i + " is missing `V[]|V->bool`");
-				//})()
-			)return then(input,value);
-		}
-		if(defaultCase)return defaultCase(value,setOfCases);
-		else throw Error("compiler error: unhandled case: '"+value?.toString()+"'");
-	}
-	function matchFlags<F,T>(flags:F,setOfCases:MatchCase[],defaultCase:(v)=>T):T{//UNFINISHED
-		"use strict";
-		//where Flags:bool[]|(Number&uint)|{[Symbol]:any}
-		type F = Flags;
-		//type MatchCase=[(F|F->bool), F->T]
-		let i = -1;
-		let _case:MatchCase;
-		let unhandledFlags = [];
-		let tryNext = forBailOld(setOfCases.length);
-		unimplemented("need to convert the code to match flags instead of cases");
-		unimplemented("while loop should run all of the valid cases, unlike")
-		//while(++i < setOfCases.length){
-		//	tryNext();
-		//	_case = setOfCases[i];
-		//	if(typeof _case[1] != "function")throw Error("compiler syntax error: case "+i+" is missing `V->T`");
-		//	if(
-		//		typeof _case[0] == "function"?_case[0](flags):
-		//		_case[0] instanceof Array?_case[0].includes(flags):
-		//		(()=>{
-		//			console.error(_case[0])
-		//			throw Error("compiler syntax error: case " + i + " is missing `V[]|V->bool`");
-		//		})()
-		//	)return _case[1](flags);
-		//}
-		if(defaultCase)return defaultCase(flags,setOfCases);
-		else throw Error("compiler error: unhandled flag: '"+unhandledFlags[0]?.toString()+"'");
-	}
-	function EnumSymbols(...list:String[]):{[Item<list>]:Symbol}{
-		return Object.freeze(list.reduce((s,v)=>[s,s[v]=Symbol(v)][0],{}));
-	}
-	type Option<T> = T|null;
-	function getFile(fileName):Option<String>{
-		let file;
-		try {
-			file = Deno.readTextFileSync(fileName);
-		} catch (err) {
-			if (!(err instanceof Deno.errors.NotFound)) {
-				throw err;
-			}
-			//Error("file does not exist");
-			return null;
-		}
-		return file;
-	}
-	function getFile_expect(fileName,throwError):String{
-		let result = getFile(fileName);
-		if(result instanceof Error)throwError();
-		return result;
-	}
-	const closingBracketMap = {"{": "}", "[": "]", "(": ")"};
-//}//----
+import {methods as Public_Object} from "./qualityOfLife.ts";
+const {
+	todo,
+	unimplemented,
+	loga,
+	logData,
+	match,
+	pass,
+	assert,
+	assume,
+	forBailOld,
+	forBailGenerator,
+	matchFlags,
+	EnumSymbols,
+	getFile_expect,
+} = Public_Object;
+Public_Object.printTree = printTree;
 const fs = Deno;//require("fs");
 //compiles simple lambda calculus
-//classes:
-	class Language{//base class
-		//external interface
-		constructor({compile,syntaxTree}={}){
-			this.#compile = compile ?? this.compile;
-			this.syntaxTree = syntaxTree ?? this.syntaxTree;
-		}
-		compile(text,throwError,fileName){
-			fileName ??= "";
-			throwError ??= e => {throw e}
-			this.currentContext = {text,throwError,fileName};
-			return this.#compile(this.currentContext);
-		}
-		//SyntaxTreeData
-			syntaxTree_regex = /\s+|[\w_]+|[()\[\]{}]|\S/g;//:Regex ; main regex for passing raw file into words
-			syntaxTree_getData = function(word){
-				return {type:"symbol",subtype:"symbol"};
-			}
-		//----
-		#compile(){}//:using(currentContext)->compiled object
-		currentContext;
-		getSyntaxTree(text,throwError,fileName){
-			return new SyntaxTree(this.syntaxTree);
-		}
-		//internal interface
-	}
-	class Errors{//for error messages that need to mark multiple words
-		constructor(data={}){Object.assign(this,data)}
-		static new(type,message,comments:[WordSymbol,String][]){
-			return new Errors({
-				type,
-				message,
-				errors:comments.map(([wordSymbol,message])=>({wordSymbol,message})),
-			})
-		}
-		type:String;
-		message:String;
-		errors:{wordSymbol:WordSymbol,message:String}[];//words to be underlines
-		getErrorString(extraIndentation = 0):String{
-			let lines = new Map();
-			for(let {wordSymbol,message} of this.errors){
-				lines.getOrInsert(wordSymbol.errorData.line,[]).push({wordSymbol,message});
-			}
-			todo()
-		}
-		intoError(error=e=>Error(e)):Error{
-			return error(this.getErrorString());
-		}
-		throwError(error=e=>Error(e)){
-			throw this.intoError(error);
-		}
-	}
-	//Syntax tree:
-		class WordSymbol extends String{
-			constructor(data={}){
-				super(data.word);
-				if(data instanceof WordSymbol){
-					data = {...data};
-					for(let i=0;i<data.length;i++)delete data[i];
-				}
-				Object.assign(this,data);
-				this.errorData = Object.assign(new this.constructor.ErrorData(),data.errorData);
-			}
-			clone(name?:String){
-				return new WordSymbol({
-					word:name??this.word,
-					afix:this.afix,
-					type:this.type,
-					subtype:this.subtype,
-					patternType:this.patternType,
-					indent:this.indent,
-					errorData:this.#errorData,
-				});
-			}
-			//
-			word;//:string
-			afix;//:Int & (!!left_arg * 2) + !!right_arg
-			type;//:Symbol
-			subtype;//:Symbol
-			patternType;//:((Object & Class())|string)? ; used to contain pattern data ; UNUSED
-			indent;//:Number ; counts from 0 ; used for parsing multiline-strings
-			isAfterWhiteSpace;//:bool
-			//when type == (number|string)
-				//value//:number|string ; is the evaluated version of 'word'
-				//valueType
-			//used with type == "bracket" && subtype == "open" || for many patterns in the syntax tree like 'a + b'
-				//contence;//:Tree(WordSymbol?)? & (when type == "parameterPattern": [WordSymbol&"bracket"]) | when 'a' from 'a=' assignmentPatturn.arguments.contence: (WordSymbol & type=="keyword")[]
-				//endBracket;//:WordSymbol & close bracket ; used when type == bracket open
-			//error data
-				#errorData:ErrorData;//is private so it does not show up when debugging compiler
-				get errorData(){return this.#errorData}
-				set errorData(value){this.#errorData = value} 
-				//errorData;
-			throwError(...args){this.errorData.throwError(...args)}
-			static ErrorData = class ErrorData{
-				file;//:SourceFile
-				line;//:Number ; counts from 1
-				column;//:Number ; counts from 1
-				indent;//:Number ; counts from 0
-				word;
-				static throwError;//is message=>throw Error(message)
-				getErrorMsg(errorType,errorMessage,stack=undefined){
-					return " ERROR:\n"
-						+ this.display_location() + "\n"
-						// " ".repeat(lineLen)+" |\n"
-						+ this.display_markWordInLine(" " + errorType + " error") + "\n"
-						+ "error" + ": " + errorMessage + "\n"
-					;
-				}
-				throw(msg,errorFunc){
-					this.constructor.throwError(errorFunc(msg));
-				}
-				throwError(errorType,errorMessage,errorFunc,stack=undefined){
-					this.constructor.throwError(errorFunc(this.getErrorMsg(errorType,errorMessage,stack)));
-				}
-				display_location(){
-					return this.file.name+":"+this.line+":"+this.column;
-				}
-				display_markWordInLine(lineRaw){
-					let line = this.file.lines[this.line-1].substr(this.indent);
-					return line+"\n"+line.substr(0,(this.column-1) - this.indent).replaceAll(/./g," ")+"^".repeat(this.word.length) + lineRaw;
-				}
-			}
-			toString(){
-				return this.word;
-			}
-		}
-		class SyntaxTree extends Array{
-			//types and subtypes for the 2nd phase of building syntax tree
-			static type = EnumSymbols(
-				"whiteSpace",
-				"comment",
-				"value",//bool|number|string|special
-				"label",
-				"bracket",// '(' ')'
-				"operator",
-				"sepparator",//';'
-				"constant",
-			);
-			static subtype = EnumSymbols(
-				// whitespace
-					"whiteSpace",
-					"comment",
-				// bracket
-					"open",
-					"closed",
-				// value
-					"string",
-					"formatString",
-					"number",
-					"bool",
-					"object",
-					"null",// 'null', ';' in ';;'
-					//UNUSED: "undefined",//'undefined' == '{}'
-				// label
-					"operator",//operators e.g. '>' '=' in '.>' '.=' ; allows for 'a.>foo' --> 'b.>,foo'
-				// operator
-					"comparitor",
-					"pipeline",// '|>' '<|' ':>' '<:'
-					"interval",// 'a..b' , 'a..=b'
-					"ternary",// 'a ?& b |? c', 'b &? a |? c' for 'if a=>b else c'
-					"declaration",// ':' ; used for ':=' syntaxes
-					"assignment",// '='
-					"typeAnnotation",
-					"return",// '?' '?!'
-					"statement",// 'if' 'while' etc... ; statements with 'statement exp => exp'
-					"autoParameter",// '#' e.g. '#', '#@', '#?' etc...
-			);
-			static subtype2 = EnumSymbols(//misc operators
-				"regex",// 'r"..."'
-				"dot",// '.' '#.'
-				// bracket
-					"struct",// `(`
-					"array",// `[`
-					"block",// `(`
-				// statement
-					"allowsDoubleExp"//statement that allow for `statement exp exp`
-			);
-			static AfixType = {//e.g. '!a' is prefix --> '0b01'
-				nofix:0b00,//'a'
-				postfix:0b10,//'a++'
-				prefix:0b01,//'++a'
-				infix:0b11,//'a+b'
-				operatorWithBothArgs:0b11,//default value
-				operatorWithLeftArg:0b10,//'a++'
-				operatorWithRightArg:0b01,//'++a'
-			};
-			constructor(text,throwError,fileName = "",regexs = {},addExtraWordData){
-				if(typeof text == "number"){super(text);return;}//for .forEach calls
-				let {allRegex, types} = regexs;
-				throwError ??= (msg = "", errorFunction = a => Error(a)) => {throw errorFunction(msg)};
-				allRegex ??= words_regex;
-				if(0)types ??= [
-					{match:"",name:""},
-					{match:/\s+/,name:"whiteSpace"},
-					{match:/^\/[/*]/,name:"comment"},
-					{match:/^[()\[\]{}]$/,name:"bracket"},
-					{match:/^(?:[+\-*^&~|]{1,2}|[/!%]|\w+|\S|={1,2})$/,name:"label"},
-				];
-				addExtraWordData ??= (wordSymbol,wordString,wordSymbols)=>wordSymbol;
-				//classes
-					//WordSymbol
-				//----
-				const file = new SourceFile(fileName);
-				const words = ((text,regex,file)=>{
-					"use strict";
-					let words = [];
-					let column = 1, line = 1, indent = 0;
-					let isIndenting = true;
-					let isAfterWhiteSpace = true;//is symbol separated by white space e.g. for '+ =' vs '+='
-					for(let v of text.matchAll(regex)){
-						let word = v[0];
-						let type;//:string
-						let wordSymbol = addExtraWordData(
-							new WordSymbol({
-								word,
-								errorData:{column,line,file,word,indent,match:v},
-								//
-								...((v)=>{if(!v.type)throw Error("property {type} is found but it is referencing undefined value in the SyntaxTree.type enum, for '"+word+"'");return v})(
-									word.match(/^\s/) ? {type:SyntaxTree.type.whiteSpace,subtype:SyntaxTree.subtype.whiteSpace}:
-									word.match(/^\/[/*]/) ? {type:SyntaxTree.type.whiteSpace,subtype:SyntaxTree.subtype.comment} :
-									word.match(/^\($/) ? {type:SyntaxTree.type.bracket,subtype:SyntaxTree.subtype.open,subtype2:SyntaxTree.subtype2.struct} :
-									word.match(/^\[$/) ? {type:SyntaxTree.type.bracket,subtype:SyntaxTree.subtype.open,subtype2:SyntaxTree.subtype2.array} :
-									word.match(/^\{$/) ? {type:SyntaxTree.type.bracket,subtype:SyntaxTree.subtype.open,subtype2:SyntaxTree.subtype2.block} :
-									word.match(/^[)\]}]$/) ? {type:SyntaxTree.type.bracket,subtype:SyntaxTree.subtype.closed} :
-									word.match(/^r(?:"|r#+")/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.string,subtype2:SyntaxTree.subtype2.regex,afix:SyntaxTree.AfixType.nofix}:
-									word.match(/^f(?:"|r#+")/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.formatString,afix:SyntaxTree.AfixType.nofix}:
-									word.match(/^"|^r#+"/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.string,afix:SyntaxTree.AfixType.nofix}:
-									word.match(/^(?:0[xo]?|[0-9])/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.number,afix:SyntaxTree.AfixType.nofix} :
-									word.match(/^(?:NaN|Infinity)$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.number,afix:SyntaxTree.AfixType.nofix} :
-									word.match(/^(?:true|false)$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.bool,afix:SyntaxTree.AfixType.nofix} :
-									word.match(/^null$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.null,afix:SyntaxTree.AfixType.nofix} :
-									//word.match(/^undefined$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.undefined,afix:SyntaxTree.AfixType.nofix} :
-									word.match(/^(?:([+\-*%&|^~])\1?|>{1,3}|<{1,2}|[!\/<>])$/) ? {type:SyntaxTree.type.operator} ://numerical operators
-									word.match(/^([!<>]=?|[!=]?==)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:\?&|[&|]\?)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.ternary} ://ternary operators
-									word.match(/^(?:=>|->)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/=$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.assignment} ://e.g. '=' '+='
-									word.match(/^:$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.declaration} :
-									word.match(/^::$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.typeAnnotation} ://type operator
-									word.match(/^(?:[|:]>)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.pipeline,isReversed:false} ://'|>' or ':>'
-									word.match(/^(?:<[|:])$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.pipeline,isReversed:true} ://'<|' or '<:'
-									word.match(/^,$/) ? {type:SyntaxTree.type.operator} ://','
-									word.match(/^¬$/) ? {type:SyntaxTree.type.operator} ://'¬'
-									word.match(/^\?!?$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.return} ://
-									word.match(/^£$/) ? {type:SyntaxTree.type.operator}://void operator
-									word.match(/^\.$/) ? {type:SyntaxTree.type.operator,subtype2:SyntaxTree.subtype2.dot} ://dot operator 
-									word.match(/^#\.$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.autoParameter,subtype2:SyntaxTree.subtype2.dot} ://dot operator 
-									word.match(/^\.\.=?$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.interval} ://interval '1..3'
-									word.match(/^(?:ref)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^@$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:\\)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:\$\$)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:\.\.\*)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^`$/) ? {type:SyntaxTree.type.operator}:
-									word.match(/^#(?:\.\.|[#@!?/\\])?$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.autoParameter,afix:SyntaxTree.AfixType.nofix} ://'#' or '##' or '#@' in: '#name' '##'
-									word.match(/^\$$/) ? {type:SyntaxTree.type.operator} ://'$type' '$key'
-									word.match(/^[$@*]\*$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.prefix}://'@*' in '@* = (a=1,b=2,c=3)'
-									word.match(/^\.\.\.$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:if|while|match)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement,subtype2:SyntaxTree.subtype2.allowsDoubleExp} :
-									word.match(/^for$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement} :
-									word.match(/^(?:break|continue|return|catch|assert|as|is)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:mod)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^in$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:else|do)$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^\w+$/) ? {type:SyntaxTree.type.label,afix:SyntaxTree.AfixType.nofix} :
-									word.match(/^[;]$/) ? {type:SyntaxTree.type.sepparator} :
-									word.match(/^"$/) ? {type:SyntaxTree.type.symbol} ://extra '"'s are caught and are handled later on
-									//word.match(/^\S+$/) ? "symbol":
-									(()=>{throw Error(`compiler error: unhandled symbol: '${word}' on line ${line}. Either add a case using 'type:SyntaxTree.type.symbol' for this or add a proper error for this case`)})()
-								),
-								indent,
-								isAfterWhiteSpace,//'+ ='
-								//parent:undefined,//assigned later, after the expression AST is constructed
-							}),
-							word,
-							words
-						);
-						isAfterWhiteSpace = [SyntaxTree.type.whiteSpace,SyntaxTree.type.comment].includes(wordSymbol.type);
-						if(word.match("\n")){
-							column = word.match(/(?<=\n)[^\n]*$/)[0].length+1;
-							line+=[...word.matchAll("\n")].length;
-							indent = word.match(/(?<=\n)[\t ]*(?=\N*$)/)?.[0]?.length??0;//note '\t \t' => 3 indents
-							isIndenting = !!word.match(/[\t ]*$/);
-						}else {
-							if(isIndenting){
-								indent+=word.match(/^[\t ]/);
-								if(word.match(/\S/))isIndenting = false;
-							}
-							column+=word.length;
-						}
-						words.push(wordSymbol);
-					};
-					file.words = words;
-					return words;
-				})(text,allRegex,file);//:WordSymbol[]
-				const NumberType = EnumSymbols("int","uint","float");
-				interface NumberLiteral {
-					type:NumberType,
-					value:Number|Number[],//where Number:i32|f32
-				}
-				const getNumber = wordSymbol => {//:NumberType
-					if("Inf" == wordSymbol.word)
-						return {valueType:NumberType,value:Infinity};
-					if("NaN" == wordSymbol.word)
-						return {valueType:NumberType,value:NaN};
-					const javascriptIntSize = 32;
-					assert((1 << javascriptIntSize) == 1);
-					let numberString = wordSymbol.replaceAll("_","");
-					let numberMatches = numberString.match(/(^.*?)(?:([IUF])([8|16|32|64|128|size])?)?$/)??[];
-					assert(numberMatches.length >= 2,"invalid number '" + wordSymbol + "'");
-					let valueString = numberMatches[1];
-					let type:""|"I"|"U"|"F" = numberMatches[2] ?? "";
-					let size:null|Number = numberMatches[3] ? +numberMatches[2] : null;
-					if(type[0] == "I" && numberString.includes("."))wordSymbol.throwError("syntax", "integers cannot have a decimal point", e=>Error(e));
-					if(type[0] == "U" && numberString.includes("."))wordSymbol.throwError("syntax", "unsigned integers cannot have a decimal point", e=>Error(e));
-					let value;
-					if(size == null || size <= javascriptIntSize)value = +valueString;
-					else {todo("remove this `else`branch. this untyped language does not have(or need) number types")
-						let [_,base,numberString] = valueString.match(/(0[box])?(.*)/);
-						let numbers = [];
-						for(let i = 0; i < numberString.length; i += javascriptIntSize){
-							numbers.push(+(base+numberString.substr(i,javascriptIntSize)));
-						}
-						value = numbers;
-					}
-					return {value,valueType:type};
-				}
-				const getString = wordSymbol => {//assume: string is valid
-					let isExtraLiteralString = !!wordSymbol.word.match(/^r?r#/);
-					let isRegex = wordSymbol.subtype2 == SyntaxTree.subtype2.regex;
-					let string = wordSymbol.word.match(/^r?(?:r#+)?"([\s\S]*)"#*/)[1]
-						.replace(/^\n/,"")
-						.replace(/\n\t*$/,"")
-						.replaceAll(/(\n|^)(\t+)/g,(_,m1,m2)=>m1+m2.substr(wordSymbol.indent+1))
-						.replaceAll("\n","\\n")
-						.replaceAll("\t","\\t")
-					;
-					if(isExtraLiteralString||isRegex){
-						string = string.replaceAll(/\\(?![nt])/g,"\\\\");
-					}
-					string = "\"" + string + "\"";
-					try{
-						string = JSON.parse(string);
-					}catch(err){
-						wordSymbol.throwError("syntax",`invalid ${isRegex?"regex":"string"} got error:"${err}"`,a=>Error(a))
-					}
-					return string;
-				}
-				const syntaxTree = ((words)=>{//()->syntaxTree:WordSymbol
-					let treePartList = [[]];//:(WordSymbol[] & WordSymbol().contence & Tree<WordSymbols>)[]
-					let bracketLevel = 0;
-					file.lines = text.split("\n");
-					let syntaxTree = words.forEach(wordSymbol=>{
-						let lastTree:WordSymbol[] = treePartList[treePartList.length-2];
-						if(wordSymbol=="\"")wordSymbol.throwError("syntax", "missing closing quote in string",a=>Error(a));
-						if(wordSymbol.type == SyntaxTree.type.comment || wordSymbol.type == SyntaxTree.type.whiteSpace)return;
-						if(wordSymbol.type == SyntaxTree.type.bracket){
-							if(wordSymbol.subtype == SyntaxTree.subtype.open){
-								treePartList[treePartList.length-1].push(wordSymbol);
-								treePartList.push([]);
-							}
-							else if(wordSymbol.subtype == SyntaxTree.subtype.closed){
-								if(!lastTree)
-									wordSymbol.throwError("syntax",
-										"extra closing bracket",
-									a=>Error(a))
-								;
-								let openBracket = lastTree[lastTree.length-1];//:WordSymbol ; corresponding open bracket
-								if({"{": "}", "[": "]", "(": ")"}[openBracket] != wordSymbol.word){
-									wordSymbol.throwError("syntax",
-										"unmatching brackets '" + openBracket.word + "' '" + wordSymbol.word + "'"
-										+"\nopened at: "+openBracket.errorData.display_location()+"\n"
-										//+openBracket.errorData.display_markWordInLine(" bracket opened", "")+"\n"
-										,
-									a=>Error(a));
-									
-								}
-								if(treePartList.length == 1)wordSymbol.throwError("syntax", "too many closing brackets",a=>Error(a));
-								lastTree[lastTree.length-1].contence = treePartList.pop();
-								lastTree[lastTree.length-1].endBracket = wordSymbol;
-							}
-							else throw Error("compiler error: impossible case '"+wordSymbol+"'");
-						}
-						else treePartList[treePartList.length-1].push(wordSymbol);
-						if(wordSymbol.subtype == SyntaxTree.subtype.string || wordSymbol.subtype == SyntaxTree.subtype.formatString)
-							wordSymbol.value = getString(wordSymbol);
-						if(wordSymbol.subtype == SyntaxTree.subtype.number)Object.assign(wordSymbol,getNumber(wordSymbol));
-					});
-					let tree;//temporty variable
-					if(treePartList.length > 1)(tree=treePartList[0])[tree.length-1].throwError("syntax", "unclosed bracket",a=>Error(a));
-					return treePartList[0];
-				})(words);
-				super(...syntaxTree);
-			}
-		}
-		class SourceFile{//used for error data
-			constructor(name){
-				this.name = name;
-			}
-			name;//:string
-			words;//:WordSymbol[]
-			lines;//:string[]
-		};
-	//----
-//----
-//main compiler logic
-	const Public_Object = {
-		todo,
-		unimplemented,
-		loga,
-		logData,
-		match,
-		pass,
-		assert,
-		assume,
-		forBailOld,
-		forBailGenerator,
-		matchFlags,
-		printTree,
-		EnumSymbols,
+//tokeniser
+	import {tokeniser_module_method} from "./tokeniser.ts";
+	const {SyntaxTree, WordSymbol} = tokeniser_module_method(Public_Object);
+	Object.assign(Public_Object,{
 		SyntaxTree,
 		WordSymbol,
-	};
+	});
+//parse tokens list into AST
 	import {parseIntoOperatorSyntaxTree_function} from "./parseOperatorSyntaxTree.ts"//:Function
 	const parseIntoOperatorSyntaxTree:Function = 
 		parseIntoOperatorSyntaxTree_function(Public_Object);
+//main compiler logic
 	//const InferedProperty = Symbol("`.b` ; infered")//`.b`
 	function getNumberOfWords(rootPattern:Expression[]){
 		return !rootPattern[0]?0:rootPattern[0].wordSymbol.errorData.file.words.length;
@@ -915,14 +353,15 @@ const fs = Deno;//require("fs");
 				toTree(){return this.exp.toTree();}
 				toString(){return "\\ function";}
 				context:Context;
-				exp:Expression<"\\">;
+				exp:Expression<"\\",[":"&{args:params&Expression[]}]|[body_exp]>;
+				//function tree structure: `"\"[":"[...params],body]` || `"\"[_,body]`
 			}
 			class ClassObj extends FunctionObj{
 				constructor(data={}){super();Object.assign(this,data);}
 				toString(){return "/ class";}
 				toTree(){return this.exp.args.slice(1)}
 				context:Context;
-				exp:Expression<"\\">;
+				exp:Expression<"/",{args:[parameters,body,Option<"\\" & constructor>]}>;
 			}
 			class ParameterData{
 
@@ -941,6 +380,9 @@ const fs = Deno;//require("fs");
 				arguments:Map<ParameterSymbol,Value[]> = {};
 				functionInstance?:&ObjectValue|Object;//points to the function instance; used for decaring `#name`
 				constructor(data={}){Object.assign(this,data)}
+				new_child(data={}){
+					return new Context({...this,...data});
+				}
 				new_child_statement(data={}){// for statements e.g. `if` statements
 					let arguments_clone = {};
 					Object.getOwnPropertySymbols(this.arguments).forEach(key=>arguments_clone[key]=[...this.arguments[key]]);
@@ -996,7 +438,7 @@ const fs = Deno;//require("fs");
 						prototypes:this.prototypes,
 					});
 				}
-				fromObjectOrObjectValue(value:ObjectValue|Array|Object):ObjectValue{
+				static fromObjectOrObjectValue(value:ObjectValue|Array|Object):ObjectValue{
 					return match(value,[
 						[()=>value instanceof ObjectValue,()=>value],
 						[()=>value instanceof Array,()=>new ObjectValue({array:value})],
@@ -1737,35 +1179,46 @@ const fs = Deno;//require("fs");
 					let argsArray:Array = try_toArray(args)??[];
 					assert(argsArray instanceof Array,"the input type of args:ObjectValue|Value[] should ensure this");
 					argsArray = argsArray.map(v=>toJSValue(v));
-					return foo(...argsArray);//TODO: handle methods with 'this' better
+					return foo.call(self,...argsArray);//TODO: handle methods with 'this' better
 				}],
 				[_=>foo instanceof FunctionObj, ()=>{
 					if(foo instanceof ClassObj){
-						todo("update this section")
 						const classObj:ClassObj = foo;
 						const clonedArgs:ObjectValue = match(args.constructor,[
 							[[ObjectValue],()=>args.clone()],
-							[[Array],()=>new ObjectValue({array:[...args]})],
-						]);
-						let newInstance = clonedArgs;
-						newInstance.class = classObj;
-						let [parametersExp,classBodyExp,constructorExp] = classObj.exp.args;
-						if(parametersExp){
-							let {parameters,nextIndex} = evalCode.destructureClassParameters(parametersExp.args,newInstance);
+							[[Array],()=>args.length == 0?new ObjectValue({class:classObj}):[...args]],
+							[[Object],()=>Object.assign(Object.create(classObj))],
+						],()=>({...args}))
+						let newInstance:ArgumentObj = clonedArgs;
+						let [parameters_exp,classBodyExp,constructorExp] = classObj.exp.args;
+						let parameters_exps:Expression[] = parameters_exp?.args||[];
+						assert(parameters_exps instanceof Array);
+						const dummyContext:Context = foo.context.new_child({namespace:foo.context.namespace.new_child({variables:newInstance})});
+						handleParameters:for(let i=0;i<parameters_exps.length;i++) {
+							let parameter_exp = parameters_exps[i];
+							let arg:Value = try_getPropertyValue(args,i,todo.silent("try remove the need for an errorWordSymbol"));
+							const errorWordSymbol = {throwError(){assert.impossibleCase("should have correct syntax so should not need an errorWordSymbol")}}
+							//assume: parameters only included named properties and no array-like items
+							evalCode.declareVariables(parameter_exp,arg,dummyContext,errorWordSymbol);
 						}
 						if(classBodyExp){
 							todo.silent("handle class body better");
-							assume(clonedArgs instanceof ObjectValue);
 							let innerContext = classObj.context.new_child_namespace({
 								functionInstance:newInstance,
 							});
 							let classSymbol = classObj[ObjectAsSymbol] ??= Symbol("[Class]");
 							let prototype = evalCode.statement(classBodyExp,innerContext);
-							newInstance.prototypes??=new ObjectValue();
-							newInstance.prototypes.properties[classSymbol] = prototype;
+							if(newInstance instanceof ObjectValue){
+								newInstance.prototypes??=new ObjectValue();
+								newInstance.prototypes.properties[classSymbol] = prototype;
+							}
+							else{
+								todo.silent("support adding prototypes to *some* javascript object types");
+								unimplemented.silent("don't add prototypes to javascript objects");
+							}
 						}
 						if(!constructorExp)return newInstance;
-						const constructor = new FunctionObj({exp:constructorExp,context:classObj.context});
+						const constructor = new FunctionObj({exp:constructorExp,context:classObj.context});todo.silent("store the function staticly along with the class")
 						return functionCall(constructor,[newInstance,foo]);
 					}
 					else{
@@ -1774,7 +1227,7 @@ const fs = Deno;//require("fs");
 						let parameters:Value&argument[];{//get parameters
 							parameters = new ObjectValue;//:mut
 							const parameters_exps:Expression[] = foo.exp.args[0]?.args??[];
-							const dummyContext:Context = foo.context.new_child_statement({namespace:foo.context.namespace.new_child({variables:parameters})});
+							const dummyContext:Context = foo.context.new_child({namespace:foo.context.namespace.new_child({variables:parameters})});
 							lengthOfParameterExps = parameters_exps.length;
 							for(let i=0;i<parameters_exps.length;i++) {
 								let parameter_exp = parameters_exps[i];
@@ -2026,48 +1479,6 @@ const fs = Deno;//require("fs");
 		return {value:derefValueFully(valueInternal),valueInternal};
 	}
 //----
-	//for each in tree
-		function forEachInTree(
-			//type Leaf:any
-			//type Node:Leaf|Node[]
-			//type Foreach:<S,S1>(node,parents:{parent,index,...any[]}[])->mutate parents
-			//  example Foreach(node,parents)=>state;
-			//type Tree: any tree-like Object
-			tree,//:TreeLike
-			[
-				getNodes = tree => tree instanceof Array? tree : false,//:(TreeLike)->Node[]|false
-				forEachLeaf = undefined,//:Foreach?
-				forEachBranch_prefix = undefined,//:Foreach?
-				forEachBranch_infix = undefined,//:Foreach?
-				forEachBranch_postfix = undefined,//:Foreach?
-			],
-		){
-			let parents = [];//:{parent:,index:}[]
-			return forEachInTree()
-			function forEachInTree(tree,state,parents){
-				errorFunc ??= a=>Error(a);
-				let i_bail;
-				let nodes = getNodes(tree,state);
-				if(!nodes){
-					forEachLeaf(node);
-					return state;
-				}
-				parents.unshift({parent:tree,index:0,state});
-				if(forEachBranch_prefix)
-					forEachBranch_prefix(parents,node);
-				for(let i_bail = 0; i_bail < nodes.length && parents.index<nodes.length; i_bail++){
-					let node = nodes[i];
-					forEachInTree(node,state);
-					if(forEachBranch_infix)
-						state = forEachBranch_infix(parents,tree,node);
-				}
-				assert(i_bail < nodex.length,"bailed");
-				if(forEachBranch_postfix)
-					state = forEachBranch_postfix(parents,tree);
-				return parents.shift().state;
-			}
-		}
-	//----
 function printTree(abstractSyntaxTree):String{//a TEST function for debugging
 	let len = 0;
 	let string = (function forEach(exp:Expression,indent=-4,parent?:Expression,isFunctionCall:bool){
