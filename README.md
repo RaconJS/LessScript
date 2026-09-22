@@ -1,5 +1,7 @@
 # Elis(WIP name) aka LessScript
 
+For short code that is writen once and never read.
+
 Type less, name less, stay DRY
 
 
@@ -167,12 +169,46 @@ joinStringsReversed("Hello"; "World");//"WorldHello"
 ```
 
 ## if else
+
+`if condition => then else then`
+
+```java
+a : 1;
+b :
+	if rainLevel == 1 =>
+		"put on a coat"
+	else 
+		"Do not put on a coat"
+;
+log,b
 ```
-a: 1;
-b: if a == 1 =>
-	"put on a coat"
-else
+
+the `=>` is optional
+
+```java
+\if #>=0 "positive" else "negative"
 ```
+
+## not operator
+
+To improve speed not operators are both prefix and postfix.
+
+```java
+a! === !a
+```
+
+if there is any confusion `!` operator is postfix `a!`
+
+
+## early return `?`
+
+```java
+sumElements:\{
+	if #array! 0?;//returns default 0 if no input provided
+	array.>\#+#
+}
+```
+
 ## e.g. sum all elements in a list:
 
 Javascript:

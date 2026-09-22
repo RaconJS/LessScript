@@ -242,7 +242,6 @@ const fs = Deno;//require("fs");
 			};
 			const commonDefaultProperties = {
 				"js":{get(self):Value_Derefed{return toJSValue(self)}},//to javascript object
-				"js":{get(self):Value_Derefed{return toJSValue(self)}},//to javascript object
 				"log"(v){console.log(...arguments);return v},
 			};
 			const defaultFunctions_ObjectValue = {
