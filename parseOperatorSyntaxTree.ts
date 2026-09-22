@@ -834,13 +834,10 @@ export function parseIntoOperatorSyntaxTree_function(
 					}
 					for(let i=0;i<exps.length;i++){
 						if(exps[i] == "¬"){
-							todo("redo '¬' code to handle multiple exps support")
 							let expsSlice = exps.slice(0,i);
 							collectIntoTree(0,maxProceedence,expsSlice);
-							assert(expsSlice.length == 1);{
-								exps[i].args[0] = expsSlice.pop();
-							}
-							exps.splice(0,i);
+							exps[i].args[0] = expsSlice.pop();
+							exps.splice(0,i,...expsSlice);
 						}
 					}
 					if(exps.length>1)collectIntoTree(0,maxProceedence,exps);
