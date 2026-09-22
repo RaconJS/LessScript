@@ -1,4 +1,4 @@
-const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[@$#]\*|(?:\?&|&\?|\|\?|\?!)|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|=>|->|[!=]==|[><!=]=?|>{1,3}|<{1,2}|([+\-*%&|^~])\2?|#(?:\.\.|[#@?/\\])|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:(?:\d|[1-9][_\d]*)(?:\.[_\d]+)?|0[box][_\dA-Fa-f]+(?:\.[_\dA-Fa-f]+)?)\b|!!!|\.\.\.|\.\.=?|\.|\b\w+\b|\S/g;//TODO: add back '#.'
+const words_regex = /\/\*[\s\S]*?\*\/|\/\/.*|[rf]?(?:r(#+)"[\s\S]*?"\1|"(?:\\u....|\\x..|\\.|[^"\n])*?")|[@$#]\*|(?:\?&|&\?|\|\?|\?!)|[|:]>|<[|:]|>:|::?|\\|(?:!<|!>)|=>|->|[!=]==|[><!=]=?|>{1,3}|<{1,2}|%%%|([+\-*%&|^~])\2?|#(?:\.\.|[#@?/\\])|\${1,2}|[¬\\]|\s+|[\(\[\{]|[\)\]\}]|\b(?:(?:\d|[1-9][_\d]*)(?:\.[_\d]+)?|0[box][_\dA-Fa-f]+(?:\.[_\dA-Fa-f]+)?)\b|!!!|\.\.\.|\.\.=?|\.|\b\w+\b|\S/g;//TODO: add back '#.'
 	//note: float numbers are handed during syntax parting to allow for '3.<' aswell as '3.2'
 	//TODO:handle format strings: need to combine words together when a format string is encountered
 		//currently cannot embed format strings in other format strings
@@ -249,7 +249,7 @@ export function tokeniser_module_method(Public_Object){
 									word.match(/^(?:true|false)$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.bool,afix:SyntaxTree.AfixType.nofix} :
 									word.match(/^null$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.null,afix:SyntaxTree.AfixType.nofix} :
 									//word.match(/^undefined$/) ? {type:SyntaxTree.type.value,subtype:SyntaxTree.subtype.undefined,afix:SyntaxTree.AfixType.nofix} :
-									word.match(/^(?:([+\-*%&|^~])\1?|>{1,3}|<{1,2}|[!\/<>])$/) ? {type:SyntaxTree.type.operator} ://numerical operators
+									word.match(/^(?:%%%|([+\-*%&|^~])\1?|>{1,3}|<{1,2}|[!\/<>])$/) ? {type:SyntaxTree.type.operator} ://numerical operators
 									word.match(/^([!<>]=?|[!=]?==)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:\?&|[&|]\?)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.ternary} ://ternary operators
 									word.match(/^(?:=>|->)$/) ? {type:SyntaxTree.type.operator} :
@@ -275,8 +275,7 @@ export function tokeniser_module_method(Public_Object){
 									word.match(/^\$$/) ? {type:SyntaxTree.type.operator} ://'$type' '$key'
 									word.match(/^[$@*]\*$/) ? {type:SyntaxTree.type.operator,afix:SyntaxTree.AfixType.prefix}://'@*' in '@* = (a=1,b=2,c=3)'
 									word.match(/^\.\.\.$/) ? {type:SyntaxTree.type.operator} :
-									word.match(/^(?:if|while|match)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement,subtype2:SyntaxTree.subtype2.operatorAllowsDoubleExp} :
-									word.match(/^for$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement} :
+									word.match(/^(?:if|while|match|for)$/) ? {type:SyntaxTree.type.operator,subtype:SyntaxTree.subtype.statement,subtype2:SyntaxTree.subtype2.operatorAllowsDoubleExp} :
 									word.match(/^(?:break|continue|return|catch|assert|as|is)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^(?:mod)$/) ? {type:SyntaxTree.type.operator} :
 									word.match(/^in$/) ? {type:SyntaxTree.type.operator} :

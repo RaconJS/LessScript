@@ -176,6 +176,7 @@
 		matchFlags,
 		EnumSymbols,
 		getFile_expect,
+		silentError,
 	};
 	export {methods};
 //}//----

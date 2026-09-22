@@ -17,6 +17,7 @@ const {
 	matchFlags,
 	EnumSymbols,
 	getFile_expect,
+	silentError,
 } = Public_Object;
 Public_Object.printTree = printTree;
 const fs = Deno;//require("fs");
@@ -48,17 +49,18 @@ const fs = Deno;//require("fs");
 					functionExp:Expression,
 				};
 				statementData?:{//operators that use '#@'; each '#@' refers to a different one
-					exp:Expression<SyntaxTree.subtype.Statement|Any>,
+					statementExp:Expression<SyntaxTree.subtype.Statement|Any>,
 					nextAutoParameterIndex:uint,//`#@`
 					nextArgumentIndex:uint,//`in exp`
 					params:Expression[],//used to address params for errors in `for in` statements (when not enough parameters)
 				};
+				forIn_statement?:&Context_parseAST.statementData;//reference to the last for statement
 				parameters:{
-					"#?"?:&Expression,
-					"#!"?:&Expression,
-					"#/"?:&Expression,
-					"#\\"?:&Expression,
-					"#.."?:&Expression,
+					"#?"?:(&Expression)[],
+					"#!"?:(&Expression)[],
+					"#/"?:(&Expression)[],
+					"#\\"?:(&Expression)[],
+					"#.."?:(&Expression)[],
 				} = {};
 			};
 			const getParameterIsSingleUse = (word:String)=>match(word,[//if e.g. `#@ == #@` is always true
@@ -90,11 +92,13 @@ const fs = Deno;//require("fs");
 						if(exp.args)forEachExp(exp.args,context,paramPath)
 					}],
 					[[SyntaxTree.type.operator],_=>{
-						if(exp.wordSymbol.subtype == SyntaxTree.subtype.autoParameter){
+						if(exp.wordSymbol.subtype == SyntaxTree.subtype.autoParameter || exp.wordSymbol.word == "in"){
 							let parentExp = match(exp.wordSymbol.word,[
 								[["#@"],_=>{
-									exp.paramRef = context?.statements?.pop();
-									exp.autoParameterIndex = context?.statements?.length;
+									if(!context.statementData)return undefined;//throws error later
+									exp.autoParameterIndex = context.statementData.nextAutoParameterIndex++;
+									context.statementData.params.push(exp);
+									return exp.paramRef = context.statementData.statementExp;
 								}],
 								[["#","##"],_=>{
 									if(context.function?context.function?.isObscuredByInnerClass:!!context.parameters["#/"])return exp.paramRef = context.parameters["#/"];
@@ -113,22 +117,32 @@ const fs = Deno;//require("fs");
 									}
 									return exp.paramRef;
 								}],
+								["in",()=>{
+									if(!context.forIn_statement)return undefined;
+									exp.paramRef = context.forIn_statement.statementExp++;
+									exp.autoParameterIndex = context.forIn_statement.nextArgumentIndex++;
+								}],
 							]);
 							if(!exp.paramRef){
 								let missingStatementName = match(exp.wordSymbol.word,[
 									[["#", "##", "#\\", "#.."],()=>"function"],
-									[["#?"],()=>"if statement"],
+									[["#?"],()=>"if expression"],
 									[["#\\"],()=>"class"],
-								],()=>"statement");
+									[["in"],()=>"for-in expression"]
+								],()=>"expression");
 								exp.wordSymbol.throwError("syntax",`missing ${missingStatementName} for parameter`,e=>Error(e));
 							}
 						}
-						function addStatementParameter(parameterName,numOfParameters = 1){
+						function addStatementParameter(parameterName,isForLoop){
 							let newParmaters = {...(context.parameters??{})};//deep clone parameters 
 							let newContext = {...context,parameters:newParmaters};
-							if(parameterName == "#@"){//'#@' can have a list of statements
+							if(isForLoop){
+								newContext.forIn_statement = newContext.statementData
 								newContext.statementData = {
-									...todo(),
+									statementExp:exp,
+									nextAutoParameterIndex:0,
+									nextArgumentIndex:0,
+									params:[],
 								};
 							}
 							if([].includes(parameterName)){
@@ -156,7 +170,7 @@ const fs = Deno;//require("fs");
 							["\\",()=>addStatementParameter("#\\")],
 							[word=>word == "/" && exp.afix == Expression.AfixType.prefix,()=>addStatementParameter("#/")],
 							[["if", "else"],()=>addStatementParameter("#?")],
-							["for",()=>addStatementParameter("#@")],
+							["for",()=>addStatementParameter("#@",true)],
 							["match",()=>addStatementParameter("#@")],
 							["if",()=>addStatementParameter("#?")],
 						],()=>{forEachExp(exp.args,context,paramPath);})
@@ -226,20 +240,29 @@ const fs = Deno;//require("fs");
 					for(let i=0;i<self;i++)functionCall(foo,[i]);
 				},
 			};
+			const commonDefaultProperties = {
+				"js":{get(self):Value_Derefed{return toJSValue(self)}},//to javascript object
+				"js":{get(self):Value_Derefed{return toJSValue(self)}},//to javascript object
+				"log"(v){console.log(...arguments);return v},
+			};
 			const defaultFunctions_ObjectValue = {
 				"="():Array{return defualtFunctionsInternal.map(this.array,...arguments)},
 				">"():Value{return defualtFunctionsInternal.reduce(this.array,...arguments)},
 				"||":{get(self):Value{return self.array.length}},//length
+				...commonDefaultProperties,
 			};
 			const defaultFunctions_Array = {
 				"="():Array{return defualtFunctionsInternal.map(this,...arguments)},
 				">"():Value{return defualtFunctionsInternal.reduce(this,...arguments)},
 				"||":{get(self):Value{return self.length}},//length
+				...commonDefaultProperties,
 			};
 			const defaultFunctions_number = {
 				"<"():Array{return defualtFunctionsInternal.iterate(+this,...arguments)},
 				"="():Array{return defualtFunctionsInternal.repeat(+this,...arguments)},
 				">"():Value{return defualtFunctionsInternal.reduceForNumber(+this,...arguments)},
+				"r"():Value{return Math.random()*this},
+				...commonDefaultProperties,
 			};
 			const defaultFunctions_all = {};
 
@@ -390,6 +413,7 @@ const fs = Deno;//require("fs");
 				contextType:ContextType = Context.ContextType.default;
 				arguments:Map<ParameterSymbol,Value[]> = {};
 				functionInstance?:&ObjectValue|Object;//points to the function instance; used for decaring `#name`
+				forLoopExp?:{index:Number,exp:Expression<"for">,args:Value_Derefed[]};//index is the current iteration index
 				constructor(data={}){Object.assign(this,data)}
 				new_child(data={}){
 					return new Context({...this,...data});
@@ -405,10 +429,10 @@ const fs = Deno;//require("fs");
 				static new_root(){
 					return new Context({
 						namespace:new Namespace({variables:{
-							inspect:(value,javascript_string)=>new Function("v,value",`return ${javascript_string}`)(value,value),
-							r:Math.random,
-							l(v){console.log(...arguments);return v},
-							log(v){console.log(...arguments);return v},
+							"inspect":(value,javascript_string)=>new Function("v,value",`return ${javascript_string}`)(value,value),
+							"r":Math.random,
+							"l"(v){console.log(...arguments);return v},
+							"log"(v){console.log(...arguments);return v},
 							...{
 								prompt,
 								confirm,
@@ -518,6 +542,7 @@ const fs = Deno;//require("fs");
 		const NullSymbol = Symbol("$null");
 		const ObjectAsSymbol = Symbol("$obj");
 		const InvalidValueSymbolError = Symbol("syntax error invalid");
+		const JavascriptFunctionUseRawValues_symbol = Symbol("use Value");
 		const compilerOnlySymbols = [isSearched,ObjectAsSymbol];//symbols that can both be {added to variables} and {that should not be accessable by the language user}
 		const ErrorSettings = {
 			allowPropertyOfUndefined:true,
@@ -626,6 +651,11 @@ const fs = Deno;//require("fs");
 							}
 							let get_x = ()=>evalCode.statement(exp.args[0],context);
 							let get_y = ()=>evalCode.statement(exp.args[1],context);
+							function getArgFromDoubleExpStatement(statement_exp):Expression[2]{//`if a=>b` --> `if a b` --> [a,b]
+								assume(exp.args[1].wordSymbol.word == "=>" || exp.args[2],"e.g. 'if name;' is not defined in the syntax spec")
+								const arrowExpArgs:Expression[2] = exp.args[2]?[exp.args[1],exp.args[2]]:exp.args[1].args;
+								return arrowExpArgs;
+							}
 							return match(exp.wordSymbol.word,[
 								["\\",()=>new FunctionObj({exp,context})],//function `\exp`
 								[word=>word=="/"&&exp.afix == Expression.AfixType.prefix,()=>new ClassObj({exp,context})],//class `/exp`
@@ -660,7 +690,7 @@ const fs = Deno;//require("fs");
 									if(parent == null){
 										if(!ErrorSettings.allowPropertyOfUndefined)exp.wordSymbol.throwError("null",`unable to get properties on '${parent}'`,e=>Error(e));
 									}
-									value = try_getPropertyValueRef(parent,propertyNameValue);
+									value = try_getPropertyRef(parent,propertyNameValue);
 									if(!!exp.args[2]){//`array.= \exp`
 										let arg = evalCode.statement(exp.args[2],context);
 										value = functionCall(value,[arg],todo.silent("handle methods; get `#.` (i.e. self) from namespace's class instance object"));
@@ -756,6 +786,8 @@ const fs = Deno;//require("fs");
 									]
 								],
 								...[//numeric and logical operators:
+									["%%%",()=>numericOperator((x,y)=>((x)%y+y)%y)],//positive modulo
+									["%%",()=>numericOperator((x,y)=>!exp.args[1]?Math.log(x):Math.log2(x)/Math.log2(y))],//log
 									[
 										word=>exp.afix == Expression.AfixType.infix &&
 										word.match(/^[+\-&|^%\/*]$|\*\*|>{2,3}|<{2}/),
@@ -870,12 +902,13 @@ const fs = Deno;//require("fs");
 											let arg = exp.args[0] ?? exp.args[1];
 											let afix:u2&Expression.AfixType = exp.afix;
 											assert(!!arg);
-											let property = unwrapValue(evalCode.statement(exp.args[0],context));
-											let value:Number|Value = derefValueFully(property);
+											assume(!(!!exp.args[0]&&!!exp.args[1]),"there is only one argument for `i++` or `++i`")
+											let property = unwrapValue(evalCode.statement(exp.args[0]||exp.args[1],context));
+											let value:Number|Value_Derefed = derefValueFully(property);
 											if(typeof value != "number")value = 0;
 											return match(afix,[
-												[Expression.AfixType.postfix,()=>assignToValue(property,value+1)],
-												[Expression.AfixType.prefix,()=>{assignToValue(property,value+1);return property}],
+												[Expression.AfixType.prefix,()=>{assignToValue(property,value+1,exp);return +value}],//i++
+												[Expression.AfixType.postfix,()=>assignToValue(property,value+1,exp)],//++i
 											]);
 										}
 									],
@@ -930,8 +963,7 @@ const fs = Deno;//require("fs");
 									}],
 									["if",()=>{//`if a => b` or `if a b`
 										let innerContext = context.new_child_statement({contextType:Context.ContextType.if});
-										assume(exp.args[1].wordSymbol.word == "=>" || exp.args[2],"e.g. 'if name;' is not defined in the syntax spec")
-										const arrowExpArgs:Expression[2] = exp.args[2]?[exp.args[1],exp.args[2]]:exp.args[1].args;
+										const arrowExpArgs:Expression[2] = getArgFromDoubleExpStatement(exp);
 										let argument = evalCode.statement(arrowExpArgs[0],innerContext);
 										const bool = derefValueFully(argument);
 										argument = argument instanceof ValueWrapperReturnValue?
@@ -964,10 +996,31 @@ const fs = Deno;//require("fs");
 										if(!derefValueFully(value))exp.wordSymbol.throwError("assertion",`assertion failed${value instanceof ValueWrapperReturnValue?`: found '${value.boolReturnValue}'`:""}`,e=>Error(e))
 										return value instanceof ValueWrapperReturnValue?value.boolReturnValue:value;
 									}],
+									["while",()=>{
+										const [condition_exp,body_exp]:Expression[2] = getArgFromDoubleExpStatement(exp);
+										let returnValue:Value;
+										let argument:Value;
+										while(!!derefValueFully(argument = evalCode.statement(condition_exp,context))){
+											const innerContext = context.new_child_statement();
+											innerContext.add_parameterSymbols({[Context.ParameterSymbol["#?"]]:[argument]});
+											returnValue = evalCode.statement(body_exp,innerContext);
+										}
+										return returnValue;
+									}],
 									["for",()=>{
 										let innerContext = context.new_child_statement({contextType:Context.ContextType.for});
-										innerContext.add_parameterSymbols({[Context.ParameterSymbol["#@"]]:[]});
-										todo("`for in` loop");
+										let indexRef = new ValueRef({value:0});//index `i`
+										let iterators:Value_Derefed[] = [];//userally in the form of arrays
+										innerContext.add_parameterSymbols({
+											[Context.ParameterSymbol["#@"]]:args
+										});
+										const [firstIterableArg,body]:Expression[2] = getArgFromDoubleExpStatement(exp);
+										if(firstIterableArg){
+											args.push(evalCode.statement(firstIterableArg,context))
+										}
+										let returnValue;
+										if(args.length == 0)returnValue = evalCode.statement(body,indexRef);
+
 									}],
 								//----
 							],);//()=>todo.silent()
@@ -1097,7 +1150,7 @@ const fs = Deno;//require("fs");
 						()=>{
 							let assignValue:Value_Returnable = getValue();
 							let parameter = evalCode.statement(parameter_exp,context);
-							let value = assignToValue(parameter,assignValue);
+							let value = assignToValue(parameter,assignValue,parameter_exp);
 							return value
 						}
 					],
@@ -1189,7 +1242,7 @@ const fs = Deno;//require("fs");
 				[_=>typeof foo == "function",()=>{
 					let argsArray:Array = try_toArray(args)??[];
 					assert(argsArray instanceof Array,"the input type of args:ObjectValue|Value[] should ensure this");
-					argsArray = argsArray.map(v=>toJSValue(v));
+					if(!foo[JavascriptFunctionUseRawValues_symbol])argsArray = argsArray.map(v=>toJSValue(v));
 					return foo.call(self,...argsArray);//TODO: handle methods with 'this' better
 				}],
 				[_=>foo instanceof FunctionObj, ()=>{
@@ -1274,13 +1327,17 @@ const fs = Deno;//require("fs");
 					}
 				}],
 				[_=>foo instanceof ClassObj, ()=>foo(...args)],
-			],()=>try_getPropertyValueRef(foo,getArg0()));
+			],()=>try_getPropertyRef(foo,getArg0()));
 			return value;
 		}
 		//get properties & keys:
 			function try_getDefaultFunction(parent:Value,name:Name,errorWordSymbol?:WordSymbol):Option<PropertyDataInternal>{//`a.=`
 				const getPropertyData = (value)=>new PropertyDataInternal({
-					parent:parent.variables,
+					parent:
+						parent instanceof PropertyRef?parent.variables:
+						parent instanceof Array?parent:
+						typeof parent == "object"?parent:
+						todo("throw an error or change parameter types in this case. Case comes up when getting properties on a number or string"),
 					parentValueObject:parent,
 					name,
 					value,
@@ -1300,6 +1357,11 @@ const fs = Deno;//require("fs");
 					else return getPropertyData(defaultFunctions_ObjectValue[name].get(parent));
 				}
 				if(parent instanceof Array && Object.hasOwn(defaultFunctions_Array,name)){
+					if(typeof defaultFunctions_Array[name] == "function")
+						return getPropertyData(defaultFunctions_Array[name].bind(parent));
+					else return getPropertyData(defaultFunctions_Array[name].get(parent));
+				}
+				if(Object.hasOwn(defaultFunctions_Array,name)){
 					if(typeof defaultFunctions_Array[name] == "function")
 						return getPropertyData(defaultFunctions_Array[name].bind(parent));
 					else return getPropertyData(defaultFunctions_Array[name].get(parent));
@@ -1390,7 +1452,7 @@ const fs = Deno;//require("fs");
 					return propertyData;
 				})
 			}
-			function try_getPropertyValueRef(parent:Value,name_value:Value,errorWordSymbol?:WordSymbol):Option<PropertyRef>{//returns dereferenced value
+			function try_getPropertyRef(parent:Value,name_value:Value,errorWordSymbol?:WordSymbol):Option<PropertyRef>{//returns dereferenced value
 				let data = try_getPropertyData(parent,derefValue(name_value),errorWordSymbol);
 				return PropertyRef.new(data);
 			}
@@ -1425,10 +1487,13 @@ const fs = Deno;//require("fs");
 			function assignToValue(parameter:Value_Unwraped|Value,assign:Value,errorWordSymbol?:WordSymbol):Value_Unwraped{
 				assign = derefValue(assign);
 				parameter = unwrapValue(parameter);
+				function error_cannotAssignTo_Value_Derefed(parameter_exp,parameter){
+					parameter_exp.wordSymbol.throwError("type",`can only assign to variable, property, or value reference. found '${parameter}'.`,e=>Error(e))
+				}
 				return match(parameter,[
 					[v=>v instanceof PropertyRef,()=>parameter.set(assign)],
 					[v=>v instanceof ValueRef,()=>parameter.set(assign)],
-				],()=>todo(loga(0,parameter,assign)));//error_cannotAssignTo_Value_Derefed());
+				],()=>error_cannotAssignTo_Value_Derefed(errorWordSymbol,parameter));
 			}
 		//----
 		//reference:
@@ -1475,8 +1540,42 @@ const fs = Deno;//require("fs");
 					],
 				],()=>value);
 			}
+			type Iterator1 = ()=>Option<Array & [key:Value_Returnable,value:Value_Returnable] | Value_Returnable[]>;//userally of 
+			const GeneratorFunction = function*(){}.constructor;
+			function try_getIterator(value:Value):Option<Iterator>{
+				value = derefValueFully(value);//:Value_Derefed
+				if(value instanceof ObjectValue){
+					try_getPropertyData(value,Symbol.iterator);
+						todo.silent("add errorWordSymbol argument");
+					if(value.isArrayType){try_getIterator(value.array)}
+					else{
+						return function* forOwnInObject(){
+							let keys = [
+								...getAsProperties(value.properties),
+								...getAsPropertiesSymbols(value.properties),
+							];
+							for(let key of keys){
+								yield try_getPropertyRef(value,key);
+							}
+						}();
+					}
+				}
+				else if(value instanceof GeneratorFunction){
+					return value();
+				}
+				else if(typeof value == "function"){
+					return function*(){
+						let item;
+						while(!!(item = value())){
+							yield item;
+						}
+					}();
+				}
+				else return value[Symbol.iterator]?.()??null;
+			}
 		//----
 		let valueInternal;
+		let rootContext;
 		try{
 			valueInternal = evalCode.forEach_exps(rootPattern,Context.new_root());
 		}
@@ -1527,7 +1626,7 @@ function compile(text,throwError,fileName="main file"){
 		let {value,valueInternal} = runAST(abstractSyntaxTree);
 		//assert(abstractSyntaxTree == rootPattern);
 		if(0)console.error(printTree(abstractSyntaxTree));
-		console.error(value);
+		console.error(valueInternal);
 		return value;
 	}
 	catch(error){

@@ -15,6 +15,7 @@ export function parseIntoOperatorSyntaxTree_function(
 		EnumSymbols,
 		SyntaxTree,
 		WordSymbol,
+		silentError
 	}
 ){
 	//proceedence:
@@ -190,8 +191,8 @@ export function parseIntoOperatorSyntaxTree_function(
 					"!@*"     :{afix:OperatorData.AfixType.prefix},
 				},
 				{
-					"**"      :{afix:OperatorData.AfixType.infix},
-					"%%"      :{afix:OperatorData.AfixType.infix},
+					"**"      :{afix:OperatorData.AfixType.infix},//pow
+					"%%"      :{afix:OperatorData.AfixType.infix},//log
 				},
 				{
 					"*"       :{afix:OperatorData.AfixType.infix,optionalArg:[1,1]},
@@ -203,6 +204,7 @@ export function parseIntoOperatorSyntaxTree_function(
 				},
 				{
 					"%"       :{afix:OperatorData.AfixType.infix},
+					"%%%"     :{afix:OperatorData.AfixType.infix},//positive modulo operator
 				},
 				{
 					"&"       :{afix:OperatorData.AfixType.infix},
@@ -385,11 +387,11 @@ export function parseIntoOperatorSyntaxTree_function(
 					}
 					i++;continue;
 				}
-				let expression;
-				({index:i,expression} = this.expression(i,parent));
-				if(expression !== undefined){
-					assert(expression !== null && expression instanceof Expression);
-					expressions.push(expression);
+				let newExpressions:Option<Expression[]>;
+				({index:i,newExpressions} = this.expression(i,parent));
+				if(newExpressions !== undefined){
+					assert(newExpressions !== null && newExpressions[0] instanceof Expression);
+					expressions.push(...newExpressions);
 				}
 			}
 			return expressions;
@@ -844,21 +846,24 @@ export function parseIntoOperatorSyntaxTree_function(
 				}
 			}
 			if(exps.length > 1){
-				if(1)console.error(printTree(exps));
-				let adjacentSides:Expression[2] = [exps[0],exps[1]].map((v,i)=>{
-					let otherSide = 1 - i;
-					let tryNext = forBailOld();
-					//assume: v:finite Tree structure
-					for(let _ of forBailGenerator(v.wordSymbol.errorData.file.words.length)){
-						let nextExp = v.args?.[otherSide];
-						if(!nextExp)break;
-						v = nextExp;
-					}
-					return v;
-				});
-				adjacentSides[1].wordSymbol.throwError("syntax", `double expression. missing expression sepparator or operator. Expected previous '.', ';', or an operator. Found '${adjacentSides[0]}' and '${adjacentSides[1]}'`, e=>Error(e));//TODO: make this error identify the 2 adjacent wordSymbols
+				if(1)silentError("double expression",null,e=>Error(e));
+				else {
+					if(1)console.error(printTree(exps));
+					let adjacentSides:Expression[2] = [exps[0],exps[1]].map((v,i)=>{
+						let otherSide = 1 - i;
+						let tryNext = forBailOld();
+						//assume: v:finite Tree structure
+						for(let _ of forBailGenerator(v.wordSymbol.errorData.file.words.length)){
+							let nextExp = v.args?.[otherSide];
+							if(!nextExp)break;
+							v = nextExp;
+						}
+						return v;
+					});
+					adjacentSides[1].wordSymbol.throwError("syntax", `double expression. missing expression sepparator or operator. Expected previous '.', ';', or an operator. Found '${adjacentSides[0]}' and '${adjacentSides[1]}'`, e=>Error(e));//TODO: make this error identify the 2 adjacent wordSymbols
+				}
 			}
-			return {index:i,expression:exps[0]};
+			return {index:i,newExpressions:exps};
 		},
 		parameter(startIndex,parent:Expression&{contence:Expression[]}){
 

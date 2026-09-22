@@ -1,2 +1,9 @@
-//idea: '#:' for 'for' loops
-assert {if 1 if 2 => [#?;#?]} == [2;1]
+js:\#;
+layers:[
+	update:[]
+	physics:[]
+	draw:[]
+]
+j:2
+runStep:\layers.<...
+layers.js
